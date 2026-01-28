@@ -127,7 +127,7 @@
 \end{table}
 
 \paragraph*{Objective} 
-Here goes the objective.
+Automatic Speech Recognition (ASR) % evaluate the trade-offs of various ASR techniques?
 
 \paragraph*{Motivation}
 Here goes the motivation.
@@ -139,12 +139,31 @@ Here goes the motivation.
 \end{enumerate}
 
 \paragraph*{Milestones}
-The following milestones are to be accomplished through semester.
 \begin{enumerate}
-	\item Milestone 1
+    \item Overall ASR architecture
+	\item Data preparation and augmentation
+        % \begin{itemize}
+        %     \item resample and convert all audio clips to have uniform sample rate, channels, and duration
+        %     \item audio augmentation (time shift, pitch shift, etc)
+        %     \item convert uniform audio clips into Mel Spectrograms
+        %     \item apply Mel Frequency Cepstral Coefficients (MFCC) to Mel Spectrograms
+        %     \item spectrogram augmentation (frequency mask, time mask, etc)
+        % \end{itemize}
+    \item Design \& implementation of ASR model
+        % \begin{itemize}
+        %     \item generate feature maps (ResNet)
+        %     \item feature maps to features (LSTM)
+        %     \item features to character probabilities (Linear layer + softmax) for each timestep
+        %     \item align input and output sequences (CTC)
+        % \end{itemize}
+    \item Training \& testing of ASR model
+    \item Evaluation of ASR model
+        % \begin{itemize}
+        %     \item accuracy: word error rate (WER)
+        %     \item real time performance
+        %     \item robustness to noise
+        % \end{itemize}
 \end{enumerate}
-
-
 	
 \paragraph*{Submission Guidelines} The main body of work is submitted through Git. In addition, each group submits a final paper and gives a presentation. In this respect, please follow these steps.
 \begin{itemize}
