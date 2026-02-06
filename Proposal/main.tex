@@ -60,7 +60,7 @@
 \numberwithin{table}{section} 
 
 
-\newcommand{\ProjectTopic}{Topic}
+\newcommand{\ProjectTopic}{Automatic Speech Recognition (ASR)}
 \newcommand{\ProjectCat}{Open-ended}
 \setlength\parindent{0pt}
 
@@ -121,50 +121,63 @@
 \begin{table}[H]
 	\begin{tabular}{l l}
 		\hline
-		\textbf{Topic} & Topic \\
+		\textbf{Topic} & Automatic Speech Recognition (ASR) \\
 		\hline
 	\end{tabular}
 \end{table}
 
 \paragraph*{Objective} 
-Automatic Speech Recognition (ASR) % evaluate the trade-offs of various ASR techniques?
+Design and implement an Automatic Speech Recognition (ASR) system that converts spoken audio into text, with a primary focus on batch transcription of pre-recorded audio files. We then aim to evaluate the impact of various components of ASR systems on transcription accuracy and generalisability.
 
 \paragraph*{Motivation}
-Here goes the motivation.
+Automatic Speech Recognition is a foundational problem in deep learning with wide-ranging real-world impact. In education, for example, accurate lecture transcription can reduce cognitive load, improve review efficiency, and enable new modes of interaction with learning material \cite{grandview_speech_to_text_api_market_2030}. \linebreak
 
-\paragraph*{Requirements} The final submission should address the following requirements while the details can be freely decided by the group members.
+Beyond its practical value, ASR offers a rich learning opportunity due to the many complex components involved in its implementation, ranging from audio signal processing and feature engineering to layered modeling approaches that combine multiple interdependent models to effectively learn the diversity and temporal structure of speech \cite{nayeem2025automaticspeechrecognitionmodern}.
+
+\paragraph*{Requirements}
 \begin{enumerate}
-	\item Item 1
-	\item Item 2
+	\item Implementation
+    \begin{itemize}
+        \item Implement pipeline to compress raw audio data to spectrograms.
+        \item Implement a baseline deep neural network model from scratch leveraging the DeepSpeech ASR architecture \cite{hannun2014deepspeechscalingendtoend}.
+    \end{itemize}
+	\item Evaluation
+    \begin{itemize}
+        \item Analyse the impact of hyperparameters and modifications/extensions on model performance, and justify the final choice of parameters and model.
+        \item Evaluate the performance of the model on different datasets, and against publicly available ASR models.
+    \end{itemize}
+    \item Potential improvements
+    \begin{itemize}
+        \item Identify the limitation(s) of the chosen architecture.
+        \item Investigate baseline enhancement using a pre-trained language model.
+    \end{itemize}
 \end{enumerate}
 
 \paragraph*{Milestones}
 \begin{enumerate}
-    \item Overall ASR architecture
-	\item Data preparation and augmentation
-        % \begin{itemize}
-        %     \item resample and convert all audio clips to have uniform sample rate, channels, and duration
-        %     \item audio augmentation (time shift, pitch shift, etc)
-        %     \item convert uniform audio clips into Mel Spectrograms (?)
-        %     \item apply Mel Frequency Cepstral Coefficients (MFCC) to Mel Spectrograms (?)
-        %     \item spectrogram augmentation (frequency mask, time mask, etc)
-        % \end{itemize}
-    \item Design \& implementation of ASR model
-        % \begin{itemize}
-        %     \item generate feature maps (ResNet)
-        %     \item feature maps to features (LSTM, Transformer)
-        %     \item features to character probabilities (Linear layer + softmax) for each timestep
-        %     \item align input and output sequences (CTC)
-        % \end{itemize}
-    \item Training \& testing of ASR model
-    \item Evaluation of ASR model
-        % \begin{itemize}
-        %     \item accuracy: word error rate (WER)
-        %     \item real time performance
-        %     \item robustness to noise
-        % \end{itemize}
+    \item Literature review
+    \begin{itemize}
+        \item ASR architectures used in industry.
+        \item Audio datasets suitable for training on limited compute.
+        \item Metrics for evaluating ASR model performance.
+    \end{itemize}
+	\item Implementation \& Testing
+        \begin{itemize}
+            \item Data preprocessing pipeline.
+            \item Training and testing pipeline.
+            \item Baseline ASR model.
+            \item Iterative improvement to baseline model.
+            \item Generalisation to other datasets.
+        \end{itemize}
+    \item Evaluation \& Analysis
+        \begin{itemize}
+            \item Effects of modifications/extensions to baseline model.
+            \item Compare with publicly available models.
+            \item Perform ablation experiments (stretch goal).
+        \end{itemize}
+    \item Final Presentation and Report
 \end{enumerate}
-	
+
 \paragraph*{Submission Guidelines} The main body of work is submitted through Git. In addition, each group submits a final paper and gives a presentation. In this respect, please follow these steps.
 \begin{itemize}
 	\item Each group must maintain a Git repository, e.g., GitHub or GitLab, for the project. By the time of final submission, the repository should have
@@ -180,15 +193,14 @@ Here goes the motivation.
 	\item A 5-minute presentation (maximum \textit{5 slides including the title slide}) is given on the internal seminar on Week 15, i.e., \textit{Dec 8 to Dec 12,} by the group. For presentation, any template can be used.
 \end{itemize}
 
-	
-	\paragraph*{Final Notes} While planning for the milestones please consider the following points.
-	\begin{enumerate}
-		\item You are encouraged to explore innovative approaches to conditioning or generation as long as the core objectives are met.
-		\item While computational resources are limited, carefully chosen datasets and training setups can make even diffusion models feasible. Trade-offs, e.g., resolution, training steps, are expected and should be justified.
-		\item Teams are expected to manage their computing needs and are advised to perform early tests to estimate runtime and training feasibility. As graduate students, team members can use facilities provided by the university, e.g., ECE Facility. Teams are expected to inform themselves about the limitations of the available computing resources and design the model accordingly.
-	\end{enumerate}
-	
-	\bibliographystyle{plain}
-	\bibliography{ref.bib}
-	
+\paragraph*{Final Notes} While planning for the milestones please consider the following points.
+\begin{enumerate}
+    \item You are encouraged to explore innovative approaches to conditioning or generation as long as the core objectives are met.
+    \item While computational resources are limited, carefully chosen datasets and training setups can make even diffusion models feasible. Trade-offs, e.g., resolution, training steps, are expected and should be justified.
+    \item Teams are expected to manage their computing needs and are advised to perform early tests to estimate runtime and training feasibility. As graduate students, team members can use facilities provided by the university, e.g., ECE Facility. Teams are expected to inform themselves about the limitations of the available computing resources and design the model accordingly.
+\end{enumerate}
+
+\bibliographystyle{unsrt}
+\bibliography{ref.bib}
+
 \end{document}
