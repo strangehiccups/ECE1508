@@ -7,14 +7,21 @@ import librosa.display
 def get_audio_duration(audio, sample_rate):
     return len(audio) / sample_rate
 
-def get_audio_stft(audio, n_fft=2048, hop_length=512):
-    return librosa.stft(audio, n_fft=n_fft, hop_length=hop_length)
+# n_FFT algorithms are optimized for powers of two (e.g., 512, 1024, 2048).
+# 512 is a common choice for speech to balance time and frequency resolution.
+# if the nfft is too small, the spectrogram will have poor frequency resolution, making it harder to distinguish between different phonemes. 
+# If it's too large, the time resolution will suffer, which can also negatively impact ASR performance.
+# Hop length is a percentage of n_fft (e.g., 25-50%) to ensure sufficient overlap between frames,
+# capturing rapid changes in speech.
+# n_mels is typically set to 80 for ASR tasks, providing a good balance between frequency resolution and computational efficiency.
+# 80 is also the default in many ASR models, including OpenAI's Whisper, and is widely used in the research community for speech recognition tasks.
 
-def get_audio_mel_spectrogram(audio, sample_rate, n_fft=2048, hop_length=512, n_mels=128):
+def get_audio_mel_spectrogram(audio, sample_rate, n_fft=512, hop_length=256, n_mels=80) -> np.ndarray:  # Hop length set to 512 as recommended for Audio processing
     S = librosa.feature.melspectrogram(
         y=audio, sr=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels
     )
-    return librosa.power_to_db(S, ref=np.max)
+    S_db = librosa.power_to_db(S, ref=np.max)
+    return (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6) # Normalize to [0, 1]
 
 def plot_waveform(audio, sample_rate):
     plt.figure(figsize=(12, 4))
