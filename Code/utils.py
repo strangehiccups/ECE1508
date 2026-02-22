@@ -2,7 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import librosa
 import librosa.display
+import torch
 
+
+HOP_LENGTH = 256
+N_FFT = 512
+N_MELS = 80
+SAMPLE_RATE = 22050
 
 def get_audio_duration(audio, sample_rate):
     return len(audio) / sample_rate
@@ -16,7 +22,7 @@ def get_audio_duration(audio, sample_rate):
 # n_mels is typically set to 80 for ASR tasks, providing a good balance between frequency resolution and computational efficiency.
 # 80 is also the default in many ASR models, including OpenAI's Whisper, and is widely used in the research community for speech recognition tasks.
 
-def get_audio_mel_spectrogram(audio, sample_rate, n_fft=512, hop_length=256, n_mels=80) -> np.ndarray:  # Hop length set to 512 as recommended for Audio processing
+def get_audio_mel_spectrogram(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, n_fft: int = N_FFT, hop_length: int = HOP_LENGTH, n_mels: int = N_MELS) -> np.ndarray:  # Hop length set to 512 as recommended for Audio processing
     S = librosa.feature.melspectrogram(
         y=audio, sr=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels
     )
@@ -31,10 +37,9 @@ def plot_waveform(audio, sample_rate):
     plt.ylabel('Amplitude')
     plt.show()
 
-def plot_audio_mel_spectrogram(audio, sample_rate):
-    mel_spectrogram = get_audio_mel_spectrogram(audio, sample_rate)
+def plot_audio_mel_spectrogram(mel_spectrogram: torch.Tensor, sample_rate: int = SAMPLE_RATE, hop_length: int = HOP_LENGTH):
     plt.figure(figsize=(12, 8))
-    librosa.display.specshow(mel_spectrogram, y_axis='mel', x_axis='time', sr=sample_rate)
+    librosa.display.specshow(mel_spectrogram.numpy(), sr=sample_rate, hop_length=hop_length, y_axis='mel', x_axis='time')
     plt.colorbar(format='%+2.0f dB')
     plt.title('Mel Spectrogram')
     plt.show()

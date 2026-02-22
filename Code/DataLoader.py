@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 from pathlib import Path
 from typing import Optional
 
-from utils import get_audio_mel_spectrogram, get_amplitude_to_db
+from utils import get_audio_mel_spectrogram
 
 import librosa
 import pandas as pd
@@ -96,7 +96,7 @@ class LJSpeechDataset(Dataset):
         return sample
 
 
-def collate_fn(batch):
+def collate_fn(batch) -> Optional[dict]:
     # Custom collate function to handle batching of variable-length audio samples
     batch = [sample for sample in batch if sample is not None]  # Filter out None samples
     if len(batch) == 0:
