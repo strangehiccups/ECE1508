@@ -36,13 +36,13 @@ class AudioSample:
     tokenized_text: Optional[np.ndarray] = None
     
 class LJSpeechDataset(Dataset):
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: str):
         # Initialize dataset, e.g., load file paths and labels
-        self.data_dir = data_dir
-        self.file_dir = data_dir / 'wavs/'
+        self.data_dir = Path(data_dir)
+        self.file_dir = self.data_dir / 'wavs'
 
-        if not self.file_dir.exists():
-            raise FileNotFoundError(f"Audio files directory 'wavs/' not found in {data_dir}")
+        if not self.file_dir.is_dir():
+            raise FileNotFoundError(f"Audio files directory 'wavs' not found in {data_dir}")
         
         self.file_paths = []  # List to store file paths
         self.labels = {}      # Dictionary to store labels (if applicable)
@@ -130,7 +130,7 @@ def collate_fn(batch) -> Optional[dict]:
     # --- Transcripts ---
     # CTC loss expects transcripts concatenated (not padded) into a single 1D tensor
     target_lengths = torch.tensor([len(t) for t in tokenized_texts], dtype=torch.long)
-    packed_transcripts = torch.cat([torch.tensor(t, dtype=torch.long) for t in tokenized_texts])
+    packed_transcripts = torch.cat([t.clone().detach().long() for t in tokenized_texts])
 
     batch = {
         'padded_spectrograms': padded_spectrograms,   # Required for CNN input: (batch, channel, n_mels, max_time_frames)
