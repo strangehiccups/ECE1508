@@ -2,7 +2,7 @@ import torch
 
 
 # DeepSpeech2 model requires one or more CNN layers
-# Below is the examples proposed by the DeepSpeec2 paper:
+# Below is the examples proposed by the DeepSpeec2 paper (1D: time, 2D: time x frequency):
 # Architecture | Channels      | Filter dimension    | Stride        | Regular Dev | Noisy Dev
 # 1-layer 1D   | 1280          | 11                  | 2             | 9.52        | 19.36
 # 2-layer 1D   | 640, 640      | 5, 5                | 1, 2          | 9.67        | 19.21
