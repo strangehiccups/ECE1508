@@ -42,13 +42,14 @@ class DeepSpeech2(nn.module):
         self.softmax = nn.Softmax()
     
     def forward(self,
-                x): # x: (batch, time, frequency)
-        out = self.feature_extractor(out)
-        out = self.gru(out)
+                x, # x: (batch, time, frequency)
+                seq_lens):
+        out, final_seq_lens = self.feature_extractor(x, seq_lens)
+        out = self.gru(out, seq_lens)
         out = self.lookAheadConv(out)
         out = self.head(out)
         if self.training:
             out = self.logSoftmax(out)
         else:
             out = self.softmax(out)
-        return out
+        return out, final_seq_lens

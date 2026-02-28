@@ -23,6 +23,7 @@ class CNN(torch.nn.Module):
         # - output feature dimension
         # - total no. of output features:
         #   self.output_size = output feature dimension * no. of output channels
+        # - account for different sequence lengths 
     
     def forward(self, x):
         x = self.cnn(x)
