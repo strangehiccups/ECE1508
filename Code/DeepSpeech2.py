@@ -9,7 +9,7 @@ import LookAheadConv
 #                     followed by 3 layers of unidirectional recurrent layers with 2560 GRU cells each,
 #                     followed by a lookahead convolution layer with tau = 80,
 #                     trained with BatchNorm and SortaGrad"
-class DeepSpeech2(nn.module):
+class DeepSpeech2(nn.Module):
     # defaults are based on the 2-layer 2D architecture
     def __init__(self,
                  tokenizer:transformers.PreTrainedTokenizerBase,
@@ -35,7 +35,7 @@ class DeepSpeech2(nn.module):
         self.lookAheadConv = LookAheadConv(in_channels=self.gru.output_size,
                                            context=80)
         # 4. output layer: hidden state sequences with future context -> character probabilities
-        self.head = nn.linear(self.lookAheadConvs.output_size, tokenizer.vocab_size)
+        self.head = nn.Linear(self.lookAheadConvs.output_size, tokenizer.vocab_size)
         # 4a. log softmax activation for CTC loss (only during training)
         self.logSoftmax = nn.LogSoftmax()
         # 4b. softmax activation (only during inference)
