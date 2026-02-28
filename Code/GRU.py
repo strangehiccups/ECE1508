@@ -11,14 +11,14 @@ class GRU(nn.Module):
                  input_size,
                  hidden_size=2560,
                  num_layers=3,
-                 birectional=False,
+                 bidirectional=False,
                  device=None):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.birectional = birectional
-        if self.birectional:
+        self.bidirectional = bidirectional
+        if self.bidirectional:
             self.output_size = 2.0*self.hidden_size
         else:
             self.output_size = self.hidden_size

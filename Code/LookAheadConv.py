@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class LookaheadConv(nn.Module):
     def __init__(self,
@@ -16,7 +17,7 @@ class LookaheadConv(nn.Module):
                               kernel_size=context + 1,
                               stride=1,
                               padding=0,
-                              groups=self.in_channels  # depthwise (per feature)
+                              groups=self.in_channels,  # depthwise (per feature)
                               bias=False) # batch norm renders bias irrelevant
         self.LN = nn.LayerNorm(self.output_size)
 

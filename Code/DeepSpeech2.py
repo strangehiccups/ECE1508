@@ -1,9 +1,9 @@
 import transformers
 import torch
 import torch.nn as nn
-import CNN
+from CNN import ConvolutionFeatureExtractor
 import GRU
-import LookAheadConv
+from LookAheadConv import LookAheadConv
 
 # DeepSpeech2 paper: "best English model has 2 layers of 2D convolution, 
 #                     followed by 3 layers of unidirectional recurrent layers with 2560 GRU cells each,
@@ -23,29 +23,29 @@ class DeepSpeech2(nn.Module):
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # 1. feature extractor: time (x frequency) tensor -> feature maps
-        self.feature_extractor = CNN(in_channels=conv_in_channels,
-                                     out_channels=conv_out_channels) # more parameters to be configurable
+        self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels, out_channels=conv_out_channels)
         # 2. GRU block: features -> hidden state sequences (time-sequential information)
-        self.gru = GRU(input_size=self.feature_extractor.output_size, # TO DO: add output_size in CNN class
+        self.gru = GRU(input_size=self.feature_extractor.output_size,
                        hidden_size=GRU_hidden_size,
                        num_layers=GRU_depth,
-                       birectional=False,
+                       bidirectional=False,
                        device=device)
         # 3. look ahead convolution block: hidden state sequences -> hidden state sequences with future context
         self.lookAheadConv = LookAheadConv(in_channels=self.gru.output_size,
                                            context=80)
         # 4. output layer: hidden state sequences with future context -> character probabilities
-        self.head = nn.Linear(self.lookAheadConvs.output_size, tokenizer.vocab_size)
+        self.head = nn.Linear(self.lookAheadConv.output_size, tokenizer.vocab_size)
         # 4a. log softmax activation for CTC loss (only during training)
         self.logSoftmax = nn.LogSoftmax()
         # 4b. softmax activation (only during inference)
         self.softmax = nn.Softmax()
     
     def forward(self,
-                x, # x: (batch, time, frequency)
+                x, # x: (batch_size, channel, frequency, time) from DataLoader
                 seq_lens):
+
         out, final_seq_lens = self.feature_extractor(x, seq_lens)
-        out = self.gru(out, seq_lens)
+        out = self.gru(out, final_seq_lens)
         out = self.lookAheadConv(out)
         out = self.head(out)
         if self.training:
