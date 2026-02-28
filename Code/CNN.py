@@ -18,6 +18,12 @@ class CNN(torch.nn.Module):
         self.cnn = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride)
         self.bn = torch.nn.BatchNorm2d(out_channels)
         self.clipped_relu = lambda x: torch.clamp(x, min=0, max=20)
+
+        # TO DO:
+        # - output feature dimension
+        # - total no. of output features:
+        #   self.output_size = output feature dimension * no. of output channels
+        # - account for different sequence lengths 
     
     def forward(self, x):
         x = self.cnn(x)
