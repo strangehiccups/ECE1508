@@ -6,19 +6,19 @@ import torch.nn as nn
 #     hidden units: 2560
 #     RNN direction: unidirectional
 #     no. of GRU->BN layers: 3
-class GRU(nn.module):
+class GRU(nn.Module):
     def __init__(self,
                  input_size,
                  hidden_size=2560,
                  num_layers=3,
-                 birectional=False,
+                 bidirectional=False,
                  device=None):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.birectional = birectional
-        if self.birectional:
+        self.bidirectional = bidirectional
+        if self.bidirectional:
             self.output_size = 2.0*self.hidden_size
         else:
             self.output_size = self.hidden_size
@@ -39,7 +39,7 @@ class GRU(nn.module):
                                   bias=False,       # batch norm renders bias irrelevant
                                   batch_first=True, # (batch, time, features)
                                   dropout=0.0,
-                                  bidirectional=self.birectional,
+                                  bidirectional=self.bidirectional,
                                   device=device)
             # LayerNorm is identical to BatchNorm1d except that it applies per-element scale and bias (no transpose required)
             self.lns[l] = nn.LayerNorm(self.output_size)
