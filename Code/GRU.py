@@ -39,9 +39,18 @@ class GRU(nn.module):
             # LayerNorm is identical to BatchNorm1d except that it applies per-element scale and bias (no transpose required)
             self.lns[l] = nn.LayerNorm(self.gru_output_size) 
 
-    def forward(self, x): # x: (batch, time, features)
+    def forward(self,
+                x, # x: (batch, time, features)
+                seq_lens):
+        batch, seq_len, _ = x.shape
         out = x
         for l in range(self.num_layers):
+            out = nn.utils.rnn.pack_padded_sequence(input=out,
+                                                    lengths=seq_lens,
+                                                    batch_first=True)
             out = self.grus[l](out)   # (batch, time, hidden_size)
+            out, _ = nn.utils.rnn.pad_packed_sequence(sequence=out,
+                                                      total_length=seq_len,
+                                                      batch_first=True)
             out = self.lns[l](out)
         return out
