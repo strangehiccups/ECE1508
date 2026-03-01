@@ -13,8 +13,14 @@ from torch import nn
 # The overall architecture: Convo2d layer -> BatchNorm2d layer -> Clipped rectified-linear ReLU
 # Clipped ReLU is computed as: σ(x) = min{max{x, 0}, 20}
 class CNNLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5)):
+    def __init__(self,
+                 in_channels: int, out_channels: int,
+                 kernel_size=(41, 11), stride=(2, 2), padding=(20, 5),
+                 device: torch.device=None):
         super().__init__()
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         self.cnn = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
         self.bn = torch.nn.BatchNorm2d(out_channels)
         self.clipped_relu = lambda x: torch.clamp(x, min=0, max=20)
@@ -26,17 +32,32 @@ class CNNLayer(nn.Module):
         x = self.clipped_relu(x)
 
         # Account for different sequence lengths (time axis)
-        seq_lens = (seq_lens + 2 * self.cnn.padding[1] - self.cnn.dilation[1] * (self.cnn.kernel_size[1] - 1) - 1) // self.cnn.stride[1] + 1
+        seq_lens = self.out_seq_lens(seq_lens)
+        # For padding > 0 masking invalid cells is required
+        x = self.mask_invalid(x, seq_lens)
         
         return x, seq_lens
+
+    def out_seq_lens(self, in_seq_len):
+        return (in_seq_len + 2 * self.cnn.padding[1] - self.cnn.dilation[1] * (self.cnn.kernel_size[1] - 1) - 1) // self.cnn.stride[1] + 1
+        
+    def mask_invalid(self, x, seq_lens):
+        batch_size, _, _, _ = x.shape
+        mask = torch.zeros(batch_size, seq_lens.max(), device=self.device)
+        for i, length in enumerate(seq_lens):
+            mask[i, :length] = 1
+        mask = mask.unsqueeze(1).unsqueeze(1)
+        return x * mask
 
 # Contains multiple CNN layers stacked together to extract features from the input
 # TODO: If necessary, add more tunnable hyperparameters: number of layers, kernel, stride, etc.
 class ConvolutionFeatureExtractor(nn.Module):
-    def __init__(self, in_channels, out_channels, in_feat_dim=80):
+    def __init__(self,
+                 in_channels: int, out_channels: int,
+                 in_feat_dim=80):
         super().__init__()
         self.in_channels = in_channels
-        self.out_channels = out_channels 
+        self.out_channels = out_channels
 
         self.conv1 = CNNLayer(in_channels, out_channels, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5))
         self.conv2 = CNNLayer(out_channels, out_channels, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5))
@@ -56,12 +77,9 @@ class ConvolutionFeatureExtractor(nn.Module):
         x, seq_lens = self.conv1(x, seq_lens)
         x, seq_lens = self.conv2(x, seq_lens)
 
-        # Output shape is currently: (batch_size, out_channels, frequency, time)
-        batch_size, out_channels, freq, time = x.size()
-        # The GRU expects: (batch_size, time, feature = out_channels * frequency)
-        # Permute to (batch_size, time, out_channels, frequency)
-        x = x.permute(0, 3, 1, 2).contiguous()
-        # Flatten the frequency and channels to create the feature vector
-        x = x.view(batch_size, time, out_channels * freq)
+        # GRU expects: (batch_size, time, feature = out_channels * frequency)
+        batch_size, out_channels, freq, time = x.shape
+        # Permute to (batch_size, time, out_channels, frequency) and flatten (channels & frequency) into the feature vector
+        x = x.permute(0, 3, 1, 2).flatten(2)
 
         return x, seq_lens

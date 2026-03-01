@@ -5,10 +5,10 @@ import librosa.display
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.utils.data.dataloader.DataLoader as DataLoader
+from torch.utils.data import DataLoader
 import transformers
 from transformers import Wav2Vec2CTCTokenizer
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 
 HOP_LENGTH = 256
 N_FFT = 512
@@ -61,22 +61,27 @@ def train(model: nn.Module,
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = model.to(device = device)
+    model = model.to(device=device)
     train_risk = []
     val_risk = []
     num_train_batches = len(train_loader)
     train_set_size = len(train_loader.dataset)
-    for epoch in tqdm(range(max_epochs)):
+    for epoch in tqdm(range(max_epochs), desc="epoch", position=0):
         # 1. train
         risk = 0.0
         model.train()
-        for batch, targets in train_loader:
+        for batch in tqdm(train_loader, desc="batch", position=1, leave=False):
+            specs = batch['padded_spectrograms']
+            seq_lens = batch['input_lengths']
+            targets = batch['packed_transcripts']
+            target_lens = batch['target_lengths']
             # move tensors to device
-            batch = batch.to(device = device)
-            targets = targets.to(device = device)
+            specs = specs.to(device=device)
+            seq_lens = seq_lens.to(device=device)
+            targets = targets.to(device=device)
             # forward pass
-            outputs = model.forward(batch)
-            loss = loss_fn(outputs, targets)
+            outputs, seq_lens = model.forward(specs, seq_lens)
+            loss = loss_fn(outputs, seq_lens, targets, target_lens)
             # collect the training loss
             risk += loss.item()
             # backward pass
@@ -91,7 +96,7 @@ def train(model: nn.Module,
         if val_loader is not None:
             val_risk.append(test(model, val_loader, loss_fn, device))
         
-        if loss <= loss_threshold # early termination
+        if loss <= loss_threshold: # early termination
             break
 
     return train_risk, val_risk
@@ -107,13 +112,18 @@ def test(model: nn.Module,
     model.eval()
     with torch.no_grad():
         risk = 0.0
-        for batch, targets in test_loader:
+        for batch in test_loader:
+            specs = batch['padded_spectrograms']
+            seq_lens = batch['input_lengths']
+            targets = batch['packed_transcripts']
+            target_lens = batch['target_lengths']
             # move tensors to device
-            batch = batch.to(device = device)
-            targets = targets.to(device = device)
+            specs = specs.to(device=device)
+            seq_lens = seq_lens.to(device=device)
+            targets = targets.to(device=device)
             # forward pass
-            outputs = model.forward(batch)
-            loss = loss_fn(outputs, targets)
+            outputs = model.forward(specs, seq_lens)
+            loss = loss_fn(outputs, seq_lens, targets, target_lens)
             # collect the training loss
             risk += loss.item()
 

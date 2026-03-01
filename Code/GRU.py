@@ -32,7 +32,7 @@ class GRU(nn.Module):
                    bias=False,       # batch norm renders bias irrelevant
                    batch_first=True, # (batch, time, features)
                    dropout=0.0,
-                   bidirectional=self.birectional,
+                   bidirectional=self.bidirectional,
                    device=device)
             for i in range(num_layers)
         ])
@@ -43,18 +43,20 @@ class GRU(nn.Module):
         ])
 
     def forward(self,
-                x, # x: (batch, time, features)
+                x, # [batch, time, features]
                 seq_lens): # expected to be sorted (in decreasing order)
         batch, seq_len, _ = x.shape
         out = x
         for l in range(self.num_layers):
+            # pack padded sequence to eliminate unnecessary convolution on pad cells
             out = nn.utils.rnn.pack_padded_sequence(input=out,
                                                     lengths=seq_lens,
                                                     batch_first=True,
-                                                    enforce_sorted=True) # NOTE: lengths are expected to be sorted (in decreasing order)
-            out, _ = self.grus[l](out)   # (batch, time, hidden_size)
+                                                    enforce_sorted=True)
+            out, _ = self.grus[l](out)   # [batch, time, hidden_size]
+            # unpack to match expected layer norm input size
             out, _ = nn.utils.rnn.pad_packed_sequence(sequence=out,
                                                       total_length=seq_len,
                                                       batch_first=True)
             out = self.lns[l](out)
-        return out # (batch, hidden state sequences
+        return out # [batch, time, hidden state sequences]
