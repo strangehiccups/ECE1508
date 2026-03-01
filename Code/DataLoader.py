@@ -9,6 +9,7 @@ from utils import get_audio_mel_spectrogram
 
 import librosa
 import pandas as pd
+import csv
 import numpy as np
 import os
 
@@ -55,7 +56,7 @@ class LJSpeechDataset(Dataset):
 
         label_file = self.data_dir / 'metadata.csv'
         if label_file.exists():
-            labels_df = pd.read_csv(label_file, header=None, sep='|', encoding='utf-8', )
+            labels_df = pd.read_csv(label_file, header=None, sep='|', encoding='utf-8', quoting=csv.QUOTE_NONE, engine='python')
             for _, row in labels_df.iterrows():
                 file_name = row[0]  # The first column contains the file name
                 label = row[2]      # The third column contains the "normalized" text

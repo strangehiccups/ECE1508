@@ -29,7 +29,7 @@ class GRU(nn.Module):
             nn.GRU(input_size=input_size if i == 0 else self.output_size,
                    hidden_size=self.hidden_size,
                    num_layers=1,
-                   bias=False,       # batch norm renders bias irrelevant
+                   bias=True,
                    batch_first=True, # (batch, time, features)
                    dropout=0.0,
                    bidirectional=self.bidirectional,
