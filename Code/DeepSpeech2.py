@@ -1,9 +1,10 @@
 import transformers
+from transformers import Wav2Vec2CTCTokenizer
 import torch
 import torch.nn as nn
-from CNN import ConvolutionFeatureExtractor
-import GRU
-from LookAheadConv import LookAheadConv
+from cnn import ConvolutionFeatureExtractor
+from gru import GRU
+from lookaheadconv import LookAheadConv
 
 # DeepSpeech2 paper: "best English model has 2 layers of 2D convolution, 
 #                     followed by 3 layers of unidirectional recurrent layers with 2560 GRU cells each,
@@ -12,14 +13,16 @@ from LookAheadConv import LookAheadConv
 class DeepSpeech2(nn.Module):
     # defaults are based on the 2-layer 2D architecture
     def __init__(self,
-                 tokenizer:transformers.PreTrainedTokenizerBase,
+                 tokenizer:transformers.PreTrainedTokenizerBase=None,
                  conv_in_channels=1,
                  conv_out_channels=32,
                  GRU_hidden_size=2560,
                  GRU_depth=3,
                  device=None):
         super().__init__()
-        # 0. device
+        # 0. initialise defaults
+        if tokenizer is None:
+            tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # 1. feature extractor: time (x frequency) tensor -> feature maps
@@ -33,15 +36,17 @@ class DeepSpeech2(nn.Module):
         # 3. look ahead convolution block: hidden state sequences -> hidden state sequences with future context
         self.lookAheadConv = LookAheadConv(in_channels=self.gru.output_size,
                                            context=80)
-        # 4. output layer: hidden state sequences with future context -> character probabilities
+        # 4. output layer: hidden state sequences with future context -> character logits
         self.head = nn.Linear(self.lookAheadConv.output_size, tokenizer.vocab_size)
-        # 4a. log softmax activation for CTC loss (only during training)
-        self.logSoftmax = nn.LogSoftmax()
-        # 4b. softmax activation (only during inference)
-        self.softmax = nn.Softmax()
+        # 4a. log softmax activation for CTC loss (only during training): character logits -> log character probabilities
+        self.logSoftmax = nn.LogSoftmax(dim=2) # head output shape: [batch, time, logits], log softmax on logits
+        # 4b. softmax activation (only during inference): character logits -> character probabilities
+        self.softmax = nn.Softmax(dim=2)       # head output shape: [batch, time, logits], softmax on logits
+        # 5. loss function
+        self.CTCLoss = nn.CTCLoss(blank=tokenizer.pad_token_id, reduction='mean')
     
     def forward(self,
-                x, # x: (batch_size, channel, frequency, time) from DataLoader
+                x, # [batch, channel, frequency, time]
                 seq_lens):
 
         out, final_seq_lens = self.feature_extractor(x, seq_lens)
@@ -53,3 +58,15 @@ class DeepSpeech2(nn.Module):
         else:
             out = self.softmax(out)
         return out, final_seq_lens
+
+    def loss_fn(self,
+                log_probs,    # [batch, time, log character probability]
+                seq_lens,     # [sequence length]
+                targets,      # [all targets over all batches]
+                target_lens): # [target length]
+        # nn.CTCLoss expects log_probs of shape [input (time), batch, class]
+        log_probs = log_probs.transpose(0,1)
+        return self.CTCLoss(log_probs=log_probs,
+                            targets=targets,
+                            input_lengths=seq_lens,
+                            target_lengths=target_lens)

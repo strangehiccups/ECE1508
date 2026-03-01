@@ -3,7 +3,12 @@ import matplotlib.pyplot as plt
 import librosa
 import librosa.display
 import torch
-
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+import transformers
+from transformers import Wav2Vec2CTCTokenizer
+from tqdm.notebook import tqdm
 
 HOP_LENGTH = 256
 N_FFT = 512
@@ -43,3 +48,83 @@ def plot_audio_mel_spectrogram(mel_spectrogram: torch.Tensor, sample_rate: int =
     plt.colorbar(format='%+2.0f dB')
     plt.title('Mel Spectrogram')
     plt.show()
+
+def train(model: nn.Module,
+          optimiser: optim.Optimizer,
+          train_loader: DataLoader,
+          val_loader: DataLoader=None,
+          tokenizer: transformers.PreTrainedTokenizerBase=Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base"),
+          loss_fn: nn.modules.loss._Loss=nn.CTCLoss(blank=Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base").pad_token_id, reduction='mean'),
+          loss_threshold: float=0.0,
+          max_epochs: int=20,
+          device: torch.device=None):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = model.to(device=device)
+    train_risk = []
+    val_risk = []
+    num_train_batches = len(train_loader)
+    train_set_size = len(train_loader.dataset)
+    for epoch in tqdm(range(max_epochs), desc="epoch", position=0):
+        # 1. train
+        risk = 0.0
+        model.train()
+        for batch in tqdm(train_loader, desc="batch", position=1, leave=False):
+            specs = batch['padded_spectrograms']
+            seq_lens = batch['input_lengths']
+            targets = batch['packed_transcripts']
+            target_lens = batch['target_lengths']
+            # move tensors to device
+            specs = specs.to(device=device)
+            seq_lens = seq_lens.to(device=device)
+            targets = targets.to(device=device)
+            # forward pass
+            outputs, seq_lens = model.forward(specs, seq_lens)
+            loss = loss_fn(outputs, seq_lens, targets, target_lens)
+            # collect the training loss
+            risk += loss.item()
+            # backward pass
+            optimiser.zero_grad()
+            loss.backward()
+            # gradient descent step
+            optimiser.step()
+            
+        train_risk.append(risk/train_set_size)
+        
+        # 2. validate
+        if val_loader is not None:
+            val_risk.append(test(model, val_loader, loss_fn, device))
+        
+        if loss <= loss_threshold: # early termination
+            break
+
+    return train_risk, val_risk
+
+def test(model: nn.Module,
+         test_loader: DataLoader,
+         loss_fn: nn.modules.loss._Loss,
+         device: torch.device=None):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    model = model.to(device = device)
+    model.eval()
+    with torch.no_grad():
+        risk = 0.0
+        for batch in test_loader:
+            specs = batch['padded_spectrograms']
+            seq_lens = batch['input_lengths']
+            targets = batch['packed_transcripts']
+            target_lens = batch['target_lengths']
+            # move tensors to device
+            specs = specs.to(device=device)
+            seq_lens = seq_lens.to(device=device)
+            targets = targets.to(device=device)
+            # forward pass
+            outputs = model.forward(specs, seq_lens)
+            loss = loss_fn(outputs, seq_lens, targets, target_lens)
+            # collect the training loss
+            risk += loss.item()
+
+    return risk/len(test_loader.dataset)
