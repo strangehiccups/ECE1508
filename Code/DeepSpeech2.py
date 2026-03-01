@@ -48,7 +48,6 @@ class DeepSpeech2(nn.Module):
     def forward(self,
                 x, # [batch, channel, frequency, time]
                 seq_lens):
-
         out, final_seq_lens = self.feature_extractor(x, seq_lens)
         out = self.gru(out, final_seq_lens)
         out = self.lookAheadConv(out)
