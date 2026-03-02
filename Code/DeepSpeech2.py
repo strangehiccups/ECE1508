@@ -27,10 +27,11 @@ class DeepSpeech2(nn.Module):
                  tokenizer:transformers.PreTrainedTokenizerBase=None,
                  conv_in_channels: int=1,
                  conv_out_channels: int=32,
-                 GRU_hidden_size: int=2560,
+                 GRU_hidden_size: int=512,   # DeepSpeech configuration (2560) is overkill for LJSpeech
                  GRU_depth: int=3,
-                 GRU_bidirectional: bool=False,
+                 GRU_bidirectional: bool=False, # unidirectional as we have look ahead convolution to add future context (cheaper but weaker approach)
                  GRU_dropout: float=0.3,
+                 look_ahead_context: int=40, # DeepSpeech configuration (80) is overkill for LJSpeech
                  device=None):
         super().__init__()
         # 0. initialise defaults
@@ -50,7 +51,7 @@ class DeepSpeech2(nn.Module):
                        device=device)
         # 3. look ahead convolution block: hidden state sequences -> hidden state sequences with future context
         self.lookAheadConv = LookAheadConv(in_channels=self.gru.output_size,
-                                           context=80)
+                                           context=look_ahead_context)
         # 4. output layer: hidden state sequences with future context -> character logits
         self.head = nn.Linear(self.lookAheadConv.output_size, tokenizer.vocab_size)
         # 4a. log softmax activation for CTC loss (only during training): character logits -> log character probabilities

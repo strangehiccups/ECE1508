@@ -4,8 +4,8 @@ import torch.nn.functional as F
 
 class LookAheadConv(nn.Module):
     def __init__(self,
-                 in_channels,
-                 context=80):
+                 in_channels: int,
+                 context: int):
         super().__init__()
         self.in_channels = in_channels
         self.output_size = self.in_channels # convolution over time, preserve no. features 
@@ -25,7 +25,7 @@ class LookAheadConv(nn.Module):
         self.learnable_parameters = self.output_size*self.kernel_size**2 \
                                   + 2*self.output_size
 
-    # TO CONSIDER: transpose-free implementation with learnable weight matrix and simple tensor operations (efficiency gained might not makeup for highly optimised Conv1d)
+    # TO CONSIDER: transpose-free implementation with learnable weight matrix and simple tensor operations (efficiency gained might not make up for highly optimised Conv1d)
     def forward(self,
                 x): # [batch, time, features]
         # Pad future context on right
