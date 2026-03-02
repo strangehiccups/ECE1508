@@ -34,7 +34,7 @@ class GRU(nn.Module):
             for i in range(self.num_layers)
         ])
         self.lns = nn.ModuleList([
-            # LayerNorm is identical to BatchNorm1d except that it applies per-element scale and bias (no transpose required)
+            # LayerNorm is identical to BatchNorm1d except that it normalises over each sample instead of over the entire batch (no transpose required)
             nn.LayerNorm(self.output_size)
             for i in range(self.num_layers)
         ])
