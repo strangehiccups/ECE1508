@@ -2,9 +2,9 @@ import transformers
 from transformers import Wav2Vec2CTCTokenizer
 import torch
 import torch.nn as nn
-from cnn import ConvolutionFeatureExtractor
-from gru import GRU
-from lookaheadconv import LookAheadConv
+from CNN import ConvolutionFeatureExtractor
+from GRU import GRU
+from LookAheadConv import LookAheadConv
 
 # DeepSpeech2 paper: "best English model has 2 layers of 2D convolution, 
 #                     followed by 3 layers of unidirectional recurrent layers with 2560 GRU cells each,

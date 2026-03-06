@@ -59,7 +59,7 @@ class GRU(nn.Module):
         for l in range(self.num_layers):
             # pack padded sequence to eliminate unnecessary convolution on pad cells
             out = nn.utils.rnn.pack_padded_sequence(input=out,
-                                                    lengths=seq_lens,
+                                                    lengths=seq_lens.cpu(),
                                                     batch_first=True,
                                                     enforce_sorted=True)
             out, _ = self.grus[l](out)   # [batch, time, hidden_size]
