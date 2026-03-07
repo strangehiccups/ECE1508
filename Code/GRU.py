@@ -54,6 +54,7 @@ class GRU(nn.Module):
     def forward(self,
                 x, # [batch, time, features]
                 seq_lens): # expected to be sorted (in decreasing order)
+        seq_lens = seq_lens.detach().to(dtype=torch.int64).cpu() # pack_padded_sequence requires lengths to be on CPU
         batch, seq_len, _ = x.shape
         out = x
         for l in range(self.num_layers):
