@@ -23,10 +23,9 @@ class GRU(nn.Module):
         self.grus = nn.ModuleList([
             nn.GRU(input_size=self.input_size if i == 0 else self.output_size,
                    hidden_size=self.hidden_size,
-                   num_layers=self.num_layers,
+                   num_layers=1,  # we stack multiple GRU layers instead of using the built-in multi-layer functionality to allow for layer norm in between
                    bias=True,
                    batch_first=True, # (batch, time, features)
-                   dropout=self.dropout,
                    bidirectional=self.bidirectional,
                    device=device)
             for i in range(self.num_layers)

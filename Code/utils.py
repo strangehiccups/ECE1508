@@ -58,10 +58,10 @@ def train(model: nn.Module,
           loss_threshold: float=0.0,
           max_epochs: int=20,
           device: torch.device=None):
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = model.to(device=device)
+    use_amp = device is not None and device.type == 'cuda'
+    scaler = torch.amp.GradScaler(enabled=use_amp)
     train_risk = []
     val_risk = []
     num_train_batches = len(train_loader)
@@ -75,20 +75,24 @@ def train(model: nn.Module,
             seq_lens = batch['input_lengths']
             targets = batch['packed_transcripts']
             target_lens = batch['target_lengths']
-            # move tensors to device
+            # move tensors to device (lengths must stay on CPU for CTCLoss)
             specs = specs.to(device=device)
-            seq_lens = seq_lens.to(device=device)
             targets = targets.to(device=device)
-            # forward pass
-            outputs, seq_lens = model.forward(specs, seq_lens)
-            loss = loss_fn(outputs, seq_lens, targets, target_lens)
+            # forward pass with mixed precision
+            optimiser.zero_grad()
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                outputs, seq_lens = model.forward(specs, seq_lens)
+                loss = loss_fn(outputs, seq_lens.cpu(), targets, target_lens.cpu())
             # collect the training loss
             risk += loss.item()
-            # backward pass
-            optimiser.zero_grad()
-            loss.backward()
+            # backward pass (scaled for mixed precision)
+            scaler.scale(loss).backward()
+            # gradient clipping to stabilise CTC training
+            scaler.unscale_(optimiser)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             # gradient descent step
-            optimiser.step()
+            scaler.step(optimiser)
+            scaler.update()
             
         train_risk.append(risk/train_set_size)
         
@@ -117,13 +121,13 @@ def test(model: nn.Module,
             seq_lens = batch['input_lengths']
             targets = batch['packed_transcripts']
             target_lens = batch['target_lengths']
-            # move tensors to device
+            # move tensors to device (lengths must stay on CPU for CTCLoss)
             specs = specs.to(device=device)
-            seq_lens = seq_lens.to(device=device)
             targets = targets.to(device=device)
             # forward pass
             outputs = model.forward(specs, seq_lens)
-            loss = loss_fn(outputs, seq_lens, targets, target_lens)
+            # CTC loss does not work with GPU tensors for lengths, so move them back to CPU
+            loss = loss_fn(outputs, seq_lens.cpu(), targets, target_lens.cpu())
             # collect the training loss
             risk += loss.item()
 
