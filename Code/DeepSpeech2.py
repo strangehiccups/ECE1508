@@ -2,9 +2,9 @@ import transformers
 from transformers import Wav2Vec2CTCTokenizer
 import torch
 import torch.nn as nn
-from cnn import ConvolutionFeatureExtractor
-from gru import GRU
-from lookaheadconv import LookAheadConv
+from CNN import ConvolutionFeatureExtractor
+from GRU import GRU
+from LookAheadConv import LookAheadConv
 
 # DeepSpeech2 paper: "best English model has 2 layers of 2D convolution, 
 #                     followed by 3 layers of unidirectional recurrent layers with 2560 GRU cells each,
@@ -32,16 +32,15 @@ class DeepSpeech2(nn.Module):
                  GRU_bidirectional: bool=False, # unidirectional as we have look ahead convolution to add future context (cheaper but weaker approach)
                  GRU_dropout: float=0.3,
                  look_ahead_context: int=40, # DeepSpeech configuration (80) is overkill for LJSpeech
-                 device=None):
+                 device: torch.device=None):
         super().__init__()
         # 0. initialise defaults
         if tokenizer is None:
             tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # 1. feature extractor: time (x frequency) tensor -> feature maps
         self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels,
-                                                             out_channels=conv_out_channels)
+                                                             out_channels=conv_out_channels,
+                                                             device=device)
         # 2. GRU block: features -> hidden state sequences (time-sequential information)
         self.gru = GRU(input_size=self.feature_extractor.output_size,
                        hidden_size=GRU_hidden_size,
