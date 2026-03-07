@@ -19,8 +19,6 @@ class GRU(nn.Module):
             self.output_size = 2*self.hidden_size
         else:
             self.output_size = self.hidden_size
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.grus = nn.ModuleList([
             nn.GRU(input_size=self.input_size if i == 0 else self.output_size,

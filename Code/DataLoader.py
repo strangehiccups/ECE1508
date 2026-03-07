@@ -88,7 +88,7 @@ class LJSpeechDataset(Dataset):
     
         sample = AudioSample(
             raw_audio=audio,
-            mel_audio=torch.tensor(mel_audio, dtype=torch.float32),
+            mel_audio=torch.tensor(mel_audio, dtype=torch.float32), # Convert to PyTorch tensor
             sample_rate=sr,
             file_path=file_path,
             raw_text=raw_text,
