@@ -77,8 +77,6 @@ def train(model: nn.Module,
             target_lens = batch['target_lengths']
             # move tensors to device
             specs = specs.to(device=device)
-            seq_lens = seq_lens.to(device=device)
-            targets = targets.to(device=device)
             # forward pass
             outputs, seq_lens = model.forward(specs, seq_lens)
             loss = loss_fn(outputs, seq_lens, targets, target_lens)
