@@ -65,7 +65,7 @@ def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
     torch.save(checkpoint, filepath)
     print(f"Checkpoint saved to {filepath} at epoch {epoch}")
 
-# Loade the saved model.
+# Load the saved model.
 def load_model(model, device, filepath=SAVE_MODEL_PATH, optimizer=None):
 
     if not os.path.exists(filepath):
