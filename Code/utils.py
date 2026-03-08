@@ -66,11 +66,11 @@ def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
     print(f"Checkpoint saved to {filepath} at epoch {epoch}")
 
 # Loade the saved model.
-def load_model(model, device, optimizer=None, filepath=SAVE_MODEL_PATH):
+def load_model(model, device, filepath=SAVE_MODEL_PATH, optimizer=None):
 
     if not os.path.exists(filepath):
         print(f"Checkpoint '{filepath}' not found.")
-        return -1, None
+        return 0, None
     
     print(f"Loading checkpoint from '{filepath}'...")
     checkpoint = torch.load(filepath, map_location=device, weights_only=False)
