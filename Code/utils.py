@@ -8,7 +8,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import transformers
 from transformers import Wav2Vec2CTCTokenizer
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 
 HOP_LENGTH = 256
 N_FFT = 512
@@ -70,7 +70,7 @@ def train(model: nn.Module,
         # 1. train
         risk = 0.0
         model.train()
-        for batch in tqdm(train_loader, desc="batch", position=1, leave=False):
+        for i, batch in tqdm(enumerate(train_loader), desc="batch", position=1, leave=False):
             specs = batch['padded_spectrograms']
             seq_lens = batch['input_lengths']
             targets = batch['packed_transcripts']
@@ -89,10 +89,12 @@ def train(model: nn.Module,
             scaler.scale(loss).backward()
             # gradient clipping to stabilise CTC training
             scaler.unscale_(optimiser)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             # gradient descent step
             scaler.step(optimiser)
             scaler.update()
+
+            if i % 10 == 0:
+                print(f"Epoch {epoch+1}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
             
         train_risk.append(risk/train_set_size)
         
