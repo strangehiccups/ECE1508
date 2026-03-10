@@ -34,9 +34,11 @@ class DeepSpeech2(nn.Module):
                  look_ahead_context: int=40, # DeepSpeech configuration (80) is overkill for LJSpeech
                  device: torch.device=None):
         super().__init__()
-        # 0. initialise defaults
-        if tokenizer is None:
-            tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
+        # 0. tokenizer
+        self.tokenizer = tokenizer
+        if self.tokenizer is None:
+            self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
+        self.blank_token_id = self.tokenizer.pad_token_id
         # 1. feature extractor: time (x frequency) tensor -> feature maps
         self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels,
                                                              out_channels=conv_out_channels,
@@ -52,13 +54,13 @@ class DeepSpeech2(nn.Module):
         self.lookAheadConv = LookAheadConv(in_channels=self.gru.output_size,
                                            context=look_ahead_context)
         # 4. output layer: hidden state sequences with future context -> character logits
-        self.head = nn.Linear(self.lookAheadConv.output_size, tokenizer.vocab_size)
+        self.head = nn.Linear(self.lookAheadConv.output_size, self.tokenizer.vocab_size)
         # 4a. log softmax activation for CTC loss (only during training): character logits -> log character probabilities
         self.logSoftmax = nn.LogSoftmax(dim=2) # head output shape: [batch, time, logits], log softmax on logits
         # 4b. softmax activation (only during inference): character logits -> character probabilities
         self.softmax = nn.Softmax(dim=2)       # head output shape: [batch, time, logits], softmax on logits
         # 5. loss function
-        self.CTCLoss = nn.CTCLoss(blank=tokenizer.pad_token_id, reduction='mean')
+        self.CTCLoss = nn.CTCLoss(blank=self.blank_token_id, reduction='mean')
     
     def forward(self,
                 x, # [batch, channel, frequency, time]
@@ -84,3 +86,4 @@ class DeepSpeech2(nn.Module):
                             targets=targets,
                             input_lengths=seq_lens,
                             target_lengths=target_lens)
+
