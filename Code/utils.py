@@ -196,7 +196,7 @@ def train(model: nn.Module,
             epoch_hyps.extend(hyps)
 
             if i % 10 == 0:
-                print(f"Epoch {epoch+1}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
+                print(f"Epoch {epoch}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
 
         epoch_loss = risk / train_set_size
         epoch_cer  = CharErrorRate()(epoch_hyps, epoch_refs).item()
@@ -204,7 +204,7 @@ def train(model: nn.Module,
         train_losses.append(epoch_loss)
         train_cers.append(epoch_cer)
         train_wers.append(epoch_wer)
-        print(f"[Train] Epoch {epoch+1}/{max_epochs}  Loss: {epoch_loss:.6f}  CER: {epoch_cer:.4f}  WER: {epoch_wer:.4f}")
+        print(f"[Train] Epoch {epoch}/{max_epochs}  Loss: {epoch_loss:.6f}  CER: {epoch_cer:.4f}  WER: {epoch_wer:.4f}")
 
         # ------------------------------------------------------------------ #
         # 2. Validation pass                                                  #
@@ -271,9 +271,10 @@ def test(model: nn.Module,
             # forward pass (model is in eval mode: returns softmax probs)
             outputs, out_lens = model.forward(specs, seq_lens)
 
-            # For CTC loss during eval we need log-probs; apply log manually
-            log_outputs = torch.log(outputs + 1e-9)
-            loss = loss_fn(log_outputs.transpose(0, 1), out_lens.cpu(), targets, target_lens.cpu())
+            # loss_fn (model.loss_fn) expects log-probs with shape [batch, time, vocab];
+            # in eval mode the model returns softmax probs, so take log here.
+            log_outputs = torch.log(outputs.clamp(min=1e-9))
+            loss = loss_fn(log_outputs, out_lens.cpu(), targets, target_lens.cpu())
             risk += loss.item()
 
             refs = _decode_targets(targets.cpu(), target_lens.cpu(), tokenizer)
