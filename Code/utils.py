@@ -8,6 +8,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import transformers
 from transformers import Wav2Vec2CTCTokenizer
+from torchmetrics.text import CharErrorRate, WordErrorRate
 from tqdm.auto import tqdm
 import os
 
@@ -91,6 +92,49 @@ def load_model(model, device, filepath=SAVE_MODEL_PATH, optimizer=None):
     print(f"Checkpoint loaded successfully. Resuming from epoch {epoch}.")
     return epoch, loss
 
+
+def ctc_greedy_decode(log_probs: torch.Tensor,
+                     output_lengths: torch.Tensor,
+                     tokenizer) -> list:
+    """Greedy CTC decode: argmax -> collapse repeats -> remove blanks -> decode tokens.
+
+    Args:
+        log_probs:      (batch, time, vocab) tensor (log-probs or softmax probs).
+        output_lengths: (batch,) tensor of valid time-steps per sample.
+        tokenizer:      tokenizer whose pad_token_id is the CTC blank label.
+
+    Returns:
+        List of decoded strings, one per sample in the batch.
+    """
+    blank_id = tokenizer.pad_token_id
+    decoded = []
+    for b in range(log_probs.shape[0]):
+        T = output_lengths[b].item()
+        pred_ids = log_probs[b, :T].argmax(dim=-1).tolist()
+        collapsed = []
+        prev = None
+        for idx in pred_ids:
+            if idx != prev:
+                if idx != blank_id:
+                    collapsed.append(idx)
+                prev = idx
+        decoded.append(tokenizer.decode(collapsed))
+    return decoded
+
+
+def _decode_targets(packed_transcripts: torch.Tensor,
+                    target_lengths: torch.Tensor,
+                    tokenizer) -> list:
+    """Reconstruct the ground-truth strings from packed CTC targets."""
+    texts = []
+    offset = 0
+    for length in target_lengths.tolist():
+        ids = packed_transcripts[offset: offset + length].tolist()
+        texts.append(tokenizer.decode(ids))
+        offset += length
+    return texts
+
+
 def train(model: nn.Module,
           optimiser: optim.Optimizer,
           train_loader: DataLoader,
@@ -105,28 +149,36 @@ def train(model: nn.Module,
     model = model.to(device=device)
     use_amp = device is not None and device.type == 'cuda'
     scaler = torch.amp.GradScaler(enabled=use_amp)
-    train_risk = []
-    val_risk = []
+
+    train_losses, val_losses = [], []
+    train_cers,   val_cers   = [], []
+    train_wers,   val_wers   = [], []
+
     num_train_batches = len(train_loader)
-    train_set_size = len(train_loader.dataset)
+    train_set_size    = len(train_loader.dataset)
+
     for epoch in tqdm(range(start_epoch, max_epochs), desc="epoch", position=0):
-        # 1. train
+        # ------------------------------------------------------------------ #
+        # 1. Training pass                                                    #
+        # ------------------------------------------------------------------ #
         risk = 0.0
+        epoch_refs, epoch_hyps = [], []
         model.train()
-        for i, batch in tqdm(enumerate(train_loader), desc="batch", position=1, leave=False):
-            specs = batch['padded_spectrograms']
-            seq_lens = batch['input_lengths']
-            targets = batch['packed_transcripts']
+        for i, batch in tqdm(enumerate(train_loader), desc="batch", position=1, leave=False, total=num_train_batches):
+            specs      = batch['padded_spectrograms']
+            seq_lens   = batch['input_lengths']
+            targets    = batch['packed_transcripts']
             target_lens = batch['target_lengths']
             # move tensors to device (lengths must stay on CPU for CTCLoss)
             specs = specs.to(device=device)
             targets = targets.to(device=device)
             # forward pass with mixed precision
             optimiser.zero_grad()
-            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-                outputs, seq_lens = model.forward(specs, seq_lens)
-                loss = loss_fn(outputs, seq_lens.cpu(), targets, target_lens.cpu())
             # collect the training loss
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                outputs, out_lens = model.forward(specs, seq_lens)
+                loss = loss_fn(outputs, out_lens.cpu(), targets, target_lens.cpu())
+
             risk += loss.item()
             # backward pass (scaled for mixed precision)
             scaler.scale(loss).backward()
@@ -136,52 +188,137 @@ def train(model: nn.Module,
             scaler.step(optimiser)
             scaler.update()
 
+            # Accumulate predictions/references for CER/WER (detach from graph)
+            with torch.no_grad():
+                refs = _decode_targets(targets.cpu(), target_lens.cpu(), tokenizer)
+                hyps = ctc_greedy_decode(outputs.float().cpu(), out_lens.cpu(), tokenizer)
+            epoch_refs.extend(refs)
+            epoch_hyps.extend(hyps)
+
             if i % 10 == 0:
                 print(f"Epoch {epoch+1}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
-            
-        train_risk.append(risk/train_set_size)
-        
-        # 2. validate
+
+        epoch_loss = risk / train_set_size
+        epoch_cer  = CharErrorRate()(epoch_hyps, epoch_refs).item()
+        epoch_wer  = WordErrorRate()(epoch_hyps, epoch_refs).item()
+        train_losses.append(epoch_loss)
+        train_cers.append(epoch_cer)
+        train_wers.append(epoch_wer)
+        print(f"[Train] Epoch {epoch+1}/{max_epochs}  Loss: {epoch_loss:.6f}  CER: {epoch_cer:.4f}  WER: {epoch_wer:.4f}")
+
+        # ------------------------------------------------------------------ #
+        # 2. Validation pass                                                  #
+        # ------------------------------------------------------------------ #
         if val_loader is not None:
-            val_risk.append(test(model, val_loader, loss_fn, device))
+            v_loss, v_cer, v_wer = test(model, val_loader, loss_fn, device, tokenizer)
+            val_losses.append(v_loss)
+            val_cers.append(v_cer)
+            val_wers.append(v_wer)
+            print(f"[ Val ] Epoch {epoch+1}/{max_epochs}  Loss: {v_loss:.6f}  CER: {v_cer:.4f}  WER: {v_wer:.4f}")
 
         save_model(
-          model=model, 
-          optimizer=optimiser, 
-          epoch=epoch,
-          loss=loss,
-          filepath=SAVE_MODEL_PATH
+            model=model,
+            optimizer=optimiser,
+            epoch=epoch,
+            loss=loss,
+            filepath=SAVE_MODEL_PATH
         )
-        
-        if loss <= loss_threshold: # early termination
+
+        if loss <= loss_threshold:  # early termination
             break
 
-    return train_risk, val_risk
+    history = {
+        'train_loss': train_losses,
+        'val_loss':   val_losses,
+        'train_cer':  train_cers,
+        'val_cer':    val_cers,
+        'train_wer':  train_wers,
+        'val_wer':    val_wers,
+    }
+    return history
 
 def test(model: nn.Module,
          test_loader: DataLoader,
          loss_fn: nn.modules.loss._Loss,
-         device: torch.device=None):
+         device: torch.device = None,
+         tokenizer=None) -> tuple:
+    """Evaluate the model on a DataLoader.
+
+    Returns:
+        (loss, cer, wer) averaged over the full dataset.
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    model = model.to(device = device)
+    if tokenizer is None:
+        tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
+
+    model = model.to(device=device)
     model.eval()
+
+    risk = 0.0
+    all_refs, all_hyps = [], []
+
     with torch.no_grad():
-        risk = 0.0
         for batch in test_loader:
-            specs = batch['padded_spectrograms']
-            seq_lens = batch['input_lengths']
-            targets = batch['packed_transcripts']
+            specs       = batch['padded_spectrograms']
+            seq_lens    = batch['input_lengths']
+            targets     = batch['packed_transcripts']
             target_lens = batch['target_lengths']
             # move tensors to device (lengths must stay on CPU for CTCLoss)
             specs = specs.to(device=device)
             targets = targets.to(device=device)
-            # forward pass
-            outputs = model.forward(specs, seq_lens)
-            # CTC loss does not work with GPU tensors for lengths, so move them back to CPU
-            loss = loss_fn(outputs, seq_lens.cpu(), targets, target_lens.cpu())
-            # collect the training loss
+
+            # forward pass (model is in eval mode: returns softmax probs)
+            outputs, out_lens = model.forward(specs, seq_lens)
+
+            # For CTC loss during eval we need log-probs; apply log manually
+            log_outputs = torch.log(outputs + 1e-9)
+            loss = loss_fn(log_outputs.transpose(0, 1), out_lens.cpu(), targets, target_lens.cpu())
             risk += loss.item()
 
-    return risk/len(test_loader.dataset)
+            refs = _decode_targets(targets.cpu(), target_lens.cpu(), tokenizer)
+            hyps = ctc_greedy_decode(outputs.cpu(), out_lens.cpu(), tokenizer)
+            all_refs.extend(refs)
+            all_hyps.extend(hyps)
+
+    avg_loss = risk / len(test_loader.dataset)
+    cer = CharErrorRate()(all_hyps, all_refs).item()
+    wer = WordErrorRate()(all_hyps, all_refs).item()
+    return avg_loss, cer, wer
+
+
+def plot_training_loss_history(history: dict):
+    epochs = range(1, len(history['train_loss']) + 1)
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, history['train_loss'], label='Train Loss')
+    if history['val_loss']:
+        plt.plot(epochs, history['val_loss'], label='Val Loss')
+    plt.title('CTC Loss History')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
+
+def plot_training_cer_history(history: dict):
+    epochs = range(1, len(history['train_cer']) + 1)
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, history['train_cer'], label='Train CER')
+    if history['val_cer']:
+        plt.plot(epochs, history['val_cer'], label='Val CER')
+    plt.title('Character Error Rate (CER) History')
+    plt.xlabel('Epoch')
+    plt.ylabel('CER')
+    plt.legend()
+    plt.show()
+
+def plot_training_wer_history(history: dict):
+    epochs = range(1, len(history['train_wer']) + 1)
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, history['train_wer'], label='Train WER')
+    if history['val_wer']:
+        plt.plot(epochs, history['val_wer'], label='Val WER')
+    plt.title('Word Error Rate (WER) History')
+    plt.xlabel('Epoch')
+    plt.ylabel('WER')
+    plt.legend()
+    plt.show()
