@@ -1,3 +1,4 @@
+import struct
 import numpy as np
 import matplotlib.pyplot as plt
 import librosa
@@ -11,12 +12,15 @@ from transformers import Wav2Vec2CTCTokenizer
 from torchmetrics.text import CharErrorRate, WordErrorRate
 from tqdm.auto import tqdm
 import os
+import h5py
 
 HOP_LENGTH = 256
 N_FFT = 512
 N_MELS = 80
 SAMPLE_RATE = 22050
 SAVE_MODEL_PATH = "model.pth"
+SAVE_HISTORY_PATH = "history.h5"
+HISTORY_KEYS = ["train_loss", "val_loss", "train_cer", "val_cer", "train_wer", "val_wer"]
 
 def get_audio_duration(audio, sample_rate):
     return len(audio) / sample_rate
@@ -92,6 +96,29 @@ def load_model(model, device, filepath=SAVE_MODEL_PATH, optimizer=None):
     print(f"Checkpoint loaded successfully. Resuming from epoch {epoch}.")
     return epoch, loss
 
+def save_history(history_values: list, path: str=SAVE_HISTORY_PATH):
+    if len(history_values) != len(HISTORY_KEYS):
+        print(f'no. of history values {len(history_values)} does not match no. of history keys {len(HISTORY_KEYS)}')
+        return None
+    
+    with h5py.File(path, "a") as f: # a: append
+        if HISTORY_KEYS[0] not in f:
+            for key in HISTORY_KEYS:
+                f.create_dataset(key, shape=(0,), maxshape=(None,))
+
+        n = f[HISTORY_KEYS[0]].shape[0]
+        new_size = n + 1
+        for i, key in enumerate(HISTORY_KEYS):
+            arr = f[key]
+            arr.resize((new_size,))
+            arr[n] = history_values[i]
+
+def load_h5_struct(filename: str) -> struct:
+    history = {}
+    with h5py.File(SAVE_HISTORY_PATH, "r") as f: # r: read
+        for key in f.keys():
+            history[key] = f[key][:]
+    return history
 
 def ctc_greedy_decode(log_probs: torch.Tensor,
                       output_lengths: torch.Tensor,
@@ -150,10 +177,6 @@ def train(model: nn.Module,
     use_amp = device is not None and device.type == 'cuda'
     scaler = torch.amp.GradScaler(enabled=use_amp)
 
-    train_losses, val_losses = [], []
-    train_cers,   val_cers   = [], []
-    train_wers,   val_wers   = [], []
-
     num_train_batches = len(train_loader)
     train_set_size    = len(train_loader.dataset)
 
@@ -201,9 +224,6 @@ def train(model: nn.Module,
         epoch_loss = risk / train_set_size
         epoch_cer  = CharErrorRate()(epoch_hyps, epoch_refs).item()
         epoch_wer  = WordErrorRate()(epoch_hyps, epoch_refs).item()
-        train_losses.append(epoch_loss)
-        train_cers.append(epoch_cer)
-        train_wers.append(epoch_wer)
         print(f"[Train] Epoch {epoch}/{max_epochs}  Loss: {epoch_loss:.6f}  CER: {epoch_cer:.4f}  WER: {epoch_wer:.4f}")
 
         # ------------------------------------------------------------------ #
@@ -211,10 +231,9 @@ def train(model: nn.Module,
         # ------------------------------------------------------------------ #
         if val_loader is not None:
             v_loss, v_cer, v_wer = test(model, val_loader, loss_fn, device, tokenizer)
-            val_losses.append(v_loss)
-            val_cers.append(v_cer)
-            val_wers.append(v_wer)
             print(f"[ Val ] Epoch {epoch+1}/{max_epochs}  Loss: {v_loss:.6f}  CER: {v_cer:.4f}  WER: {v_wer:.4f}")
+        else:
+            v_loss, v_cer, v_wer = [-1,-1,-1] # negative values indicate undefined (for saving history)
 
         save_model(
             model=model,
@@ -224,18 +243,19 @@ def train(model: nn.Module,
             filepath=SAVE_MODEL_PATH
         )
 
+        save_history(
+            [epoch_loss,
+             v_loss,
+             epoch_cer,
+             v_cer,
+             epoch_wer,
+             v_wer]
+        )
+
         if loss <= loss_threshold:  # early termination
             break
 
-    history = {
-        'train_loss': train_losses,
-        'val_loss':   val_losses,
-        'train_cer':  train_cers,
-        'val_cer':    val_cers,
-        'train_wer':  train_wers,
-        'val_wer':    val_wers,
-    }
-    return history
+    return load_h5_struct(SAVE_HISTORY_PATH)
 
 def test(model: nn.Module,
          test_loader: DataLoader,
