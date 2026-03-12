@@ -94,8 +94,8 @@ def load_model(model, device, filepath=SAVE_MODEL_PATH, optimizer=None):
 
 
 def ctc_greedy_decode(log_probs: torch.Tensor,
-                     output_lengths: torch.Tensor,
-                     tokenizer) -> list:
+                      output_lengths: torch.Tensor,
+                      tokenizer) -> list:
     """Greedy CTC decode: argmax -> collapse repeats -> remove blanks -> decode tokens.
 
     Args:
@@ -268,17 +268,13 @@ def test(model: nn.Module,
             specs = specs.to(device=device)
             targets = targets.to(device=device)
 
-            # forward pass (model is in eval mode: returns softmax probs)
-            outputs, out_lens = model.forward(specs, seq_lens)
-
-            # loss_fn (model.loss_fn) expects log-probs with shape [batch, time, vocab];
-            # in eval mode the model returns softmax probs, so take log here.
-            log_outputs = torch.log(outputs.clamp(min=1e-9))
-            loss = loss_fn(log_outputs, out_lens.cpu(), targets, target_lens.cpu())
+            # forward pass
+            log_probs, out_lens = model.forward(specs, seq_lens)
+            loss = loss_fn(log_probs, out_lens.cpu(), targets, target_lens.cpu())
             risk += loss.item()
 
             refs = _decode_targets(targets.cpu(), target_lens.cpu(), tokenizer)
-            hyps = ctc_greedy_decode(outputs.cpu(), out_lens.cpu(), tokenizer)
+            hyps = ctc_greedy_decode(log_probs.cpu(), out_lens.cpu(), tokenizer)
             all_refs.extend(refs)
             all_hyps.extend(hyps)
 
