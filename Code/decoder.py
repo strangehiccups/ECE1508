@@ -1,7 +1,25 @@
 import torch
 import torch.nn as nn
 import transformers
-from torchaudio.models.decoder import ctc_decoder
+
+import importlib
+import subprocess
+import sys
+try:
+    importlib.import_module("flashlight")
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "flashlight-text"])
+try:
+    importlib.import_module("torchaudio")
+except ImportError:
+    if torch.cuda.is_available():
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 --upgrade --force-reinstall"])
+    else:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu"])
+if torch.cuda.is_available():
+    from torchaudio.models.decoder import cuda_ctc_decoder
+else:
+    from torchaudio.models.decoder import ctc_decoder
 from torchaudio.models.decoder._ctc_decoder import CTCDecoderLM
 
 class Decoder(nn.Module):
@@ -20,12 +38,21 @@ class Decoder(nn.Module):
         self.lm = lm
         self.nbest = nbest
         self.beam_size = beam_size
-        self.decoder = ctc_decoder(lexicon=self.lexicon,
-                                   tokens=self.tokens,
-                                   blank_token=self.blank_token,
-                                   lm=self.lm,
-                                   nbest=self.nbest,
-                                   beam_size=self.beam_size)
+        if torch.cuda.is_available():
+            self.decoder = cuda_ctc_decoder(lexicon=self.lexicon,
+                                            tokens=self.tokens,
+                                            blank_token=self.blank_token,
+                                            lm=self.lm,
+                                            nbest=self.nbest,
+                                            beam_size=self.beam_size)
+        else:
+            self.decoder = ctc_decoder(lexicon=self.lexicon,
+                                       tokens=self.tokens,
+                                       blank_token=self.blank_token,
+                                       lm=self.lm,
+                                       nbest=self.nbest,
+                                       beam_size=self.beam_size)
+        
 
     # Greedy CTC decode: argmax at each timestep, collapse repeats, remove blanks
     def decode_greedy(self,
@@ -34,8 +61,8 @@ class Decoder(nn.Module):
                       model: nn.Module) -> str:
         model.eval()
         with torch.no_grad():
-            probs, _ = model(specs, spec_lengths)
-        pred_ids = probs.argmax(dim=-1)
+            log_probs, _ = model(specs, spec_lengths)
+        pred_ids = log_probs.argmax(dim=-1)
         # remove repeated and blank tokens
         collapsed = torch.unique_consecutive(pred_ids)
         collapsed = collapsed[collapsed != self.blank_token_id]
@@ -47,8 +74,11 @@ class Decoder(nn.Module):
                     model: nn.Module) -> str:
         model.eval()
         with torch.no_grad():
-            probs, out_lens = model(specs, spec_lengths)
-        results = self.decoder(probs, out_lens)
+            log_probs, out_lens = model(specs, spec_lengths)
+        if torch.cuda.is_available():
+            results = self.decoder(log_probs, out_lens)
+        else:
+            results = self.decoder(log_probs.cpu(), out_lens.cpu())
         # token ids to text
         batch_text = []
         for sample in results:
