@@ -1,4 +1,3 @@
-import struct
 import numpy as np
 import matplotlib.pyplot as plt
 import librosa
@@ -9,10 +8,18 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import transformers
 from transformers import Wav2Vec2CTCTokenizer
-from torchmetrics.text import CharErrorRate, WordErrorRate
 from tqdm.auto import tqdm
 import os
 import h5py
+
+import importlib
+import subprocess
+import sys
+try:
+    importlib.import_module("torchmetrics")
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "torchmetrics[audio]"])
+from torchmetrics.text import CharErrorRate, WordErrorRate
 
 HOP_LENGTH = 256
 N_FFT = 512
@@ -113,11 +120,14 @@ def save_history(history_values: list, path: str=SAVE_HISTORY_PATH):
             arr.resize((new_size,))
             arr[n] = history_values[i]
 
-def load_h5_struct(filename: str) -> struct:
+def load_h5_struct(filename: str):
     history = {}
-    with h5py.File(SAVE_HISTORY_PATH, "r") as f: # r: read
-        for key in f.keys():
-            history[key] = f[key][:]
+    try:
+        with h5py.File(SAVE_HISTORY_PATH, "r") as f: # r: read
+            for key in f.keys():
+                history[key] = f[key][:]
+    except FileNotFoundError:
+        history = None
     return history
 
 def ctc_greedy_decode(log_probs: torch.Tensor,
@@ -308,7 +318,7 @@ def plot_training_loss_history(history: dict):
     epochs = range(1, len(history['train_loss']) + 1)
     plt.figure(figsize=(8, 5))
     plt.plot(epochs, history['train_loss'], label='Train Loss')
-    if history['val_loss']:
+    if 'val_loss' in history:
         plt.plot(epochs, history['val_loss'], label='Val Loss')
     plt.title('CTC Loss History')
     plt.xlabel('Epoch')
@@ -320,7 +330,7 @@ def plot_training_cer_history(history: dict):
     epochs = range(1, len(history['train_cer']) + 1)
     plt.figure(figsize=(8, 5))
     plt.plot(epochs, history['train_cer'], label='Train CER')
-    if history['val_cer']:
+    if 'val_cer' in history:
         plt.plot(epochs, history['val_cer'], label='Val CER')
     plt.title('Character Error Rate (CER) History')
     plt.xlabel('Epoch')
@@ -332,7 +342,7 @@ def plot_training_wer_history(history: dict):
     epochs = range(1, len(history['train_wer']) + 1)
     plt.figure(figsize=(8, 5))
     plt.plot(epochs, history['train_wer'], label='Train WER')
-    if history['val_wer']:
+    if 'val_wer' in history:
         plt.plot(epochs, history['val_wer'], label='Val WER')
     plt.title('Word Error Rate (WER) History')
     plt.xlabel('Epoch')
