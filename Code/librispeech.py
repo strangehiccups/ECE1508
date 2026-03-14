@@ -1,17 +1,11 @@
 import logging
-import os
 from pathlib import Path
 
 import librosa
-import requests
-import tarfile
 import torch
 from torch.utils.data import Dataset
-from transformers import Wav2Vec2CTCTokenizer
 
 from utils import AudioSample, get_audio_mel_spectrogram
-
-tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
 
 
 # AI-generated code for logging setup. Not part of the original codebase, but included here for completeness.
@@ -21,39 +15,6 @@ if not logger.hasHandlers():
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
-
-
-def download_librispeech(data_dir: str, split: str, url: str) -> None:
-    """Download and extract a LibriSpeech split into *data_dir* if not already present.
-
-    After extraction the split lives at::
-
-        data_dir/LibriSpeech/<split>/
-    """
-    data_dir = Path(data_dir)
-    split_dir = data_dir / "LibriSpeech" / split
-    if split_dir.exists():
-        logger.info(f"LibriSpeech {split} already present at {split_dir}. Skipping download.")
-        return
-
-    url = url
-    archive_path = data_dir / f"LibriSpeech-{split}.tar.gz"
-    data_dir.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f"Downloading LibriSpeech {split} from {url}...")
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with open(archive_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-    logger.info("Download complete. Extracting...")
-
-    with tarfile.open(archive_path, "r:gz") as tar:
-        tar.extractall(path=data_dir)
-    logger.info(f"Extraction complete. Dataset available at {split_dir}")
-
-    archive_path.unlink()
-
 
 class LibriSpeechDataset(Dataset):
     """LibriSpeech dataset for a single split (default: *test-clean*).
@@ -79,20 +40,15 @@ class LibriSpeechDataset(Dataset):
         after extraction).
     split:
         Dataset split to load, e.g. ``"test-clean"``.
-    download:
-        If ``True``, download the split when not already present.
     """
 
     def __init__(self, data_dir: str, split: str = "test-clean", download: bool = False):
         self.split_dir = Path(data_dir) / "LibriSpeech" / split
 
-        if download:
-            download_librispeech(data_dir, split)
-
         if not self.split_dir.exists():
             raise FileNotFoundError(
                 f"LibriSpeech split directory not found: {self.split_dir}. "
-                "Pass download=True to download it automatically."
+                f"Please download and extract the dataset using data_loader.download_librispeech()."
             )
 
         logger.info(f"Loading LibriSpeech {split} from {self.split_dir}...")
@@ -153,6 +109,6 @@ class LibriSpeechDataset(Dataset):
             tokenized_text=torch.tensor(tokenized_text, dtype=torch.long),
         )
 
-def load_librispeech(data_dir: str, split: str = "test-clean", download: bool = False) -> LibriSpeechDataset:
+def load_librispeech(data_dir: str, split: str = "test-clean") -> LibriSpeechDataset:
     """Helper function to load LibriSpeech dataset."""
-    return LibriSpeechDataset(data_dir, split=split, download=download)
+    return LibriSpeechDataset(data_dir, split=split)
