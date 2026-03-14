@@ -16,22 +16,19 @@ from typing import Optional
 
 import h5py
 
-import importlib
-import subprocess
-import sys
-try:
-    importlib.import_module("torchmetrics")
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "torchmetrics[audio]"])
-from torchmetrics.text import CharErrorRate, WordErrorRate
+from config import (
+    TOKENIZER,
+    BLANK_TOKEN_ID,
+    HISTORY_KEYS,
+    SAMPLE_RATE,
+    N_FFT,
+    HOP_LENGTH,
+    N_MELS,
+    SAVE_MODEL_PATH,
+    SAVE_HISTORY_PATH
+)
 
-HOP_LENGTH = 256
-N_FFT = 512
-N_MELS = 80
-SAMPLE_RATE = 22050
-SAVE_MODEL_PATH = "model.pth"
-SAVE_HISTORY_PATH = "history.h5"
-HISTORY_KEYS = ["train_loss", "val_loss", "train_cer", "val_cer", "train_wer", "val_wer"]
+from torchmetrics.text import CharErrorRate, WordErrorRate
 
 
 @dataclass(frozen=True)
@@ -57,6 +54,10 @@ def get_audio_duration(audio, sample_rate):
 # 80 is also the default in many ASR models, including OpenAI's Whisper, and is widely used in the research community for speech recognition tasks.
 
 def get_audio_mel_spectrogram(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, n_fft: int = N_FFT, hop_length: int = HOP_LENGTH, n_mels: int = N_MELS) -> np.ndarray:  # Hop length set to 512 as recommended for Audio processing
+    # Resample if the audio sample rate is different from the expected SAMPLE_RATE
+    if sample_rate != SAMPLE_RATE:
+        audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=SAMPLE_RATE)
+        sample_rate = SAMPLE_RATE
     S = librosa.feature.melspectrogram(
         y=audio, sr=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels
     )
@@ -234,11 +235,12 @@ def train(model: nn.Module,
           optimiser: optim.Optimizer,
           train_loader: DataLoader,
           val_loader: DataLoader=None,
-          tokenizer: transformers.PreTrainedTokenizerBase=Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base"),
-          loss_fn: nn.modules.loss._Loss=nn.CTCLoss(blank=Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base").pad_token_id, reduction='mean'),
+          tokenizer: transformers.PreTrainedTokenizerBase=TOKENIZER,
+          loss_fn: nn.modules.loss._Loss=nn.CTCLoss(blank=BLANK_TOKEN_ID, reduction='mean'),
           loss_threshold: float=0.0,
           start_epoch: int=0,
           max_epochs: int=20,
+          scheduler: optim.lr_scheduler.LRScheduler=None,
           device: torch.device=None):
 
     model = model.to(device=device)
@@ -248,7 +250,7 @@ def train(model: nn.Module,
     num_train_batches = len(train_loader)
     train_set_size    = len(train_loader.dataset)
 
-    for epoch in tqdm(range(start_epoch, max_epochs), desc="epoch", position=0):
+    for epoch in tqdm(range(start_epoch, max_epochs+1), desc="epoch", position=0):
         # ------------------------------------------------------------------ #
         # 1. Training pass                                                    #
         # ------------------------------------------------------------------ #
@@ -268,7 +270,13 @@ def train(model: nn.Module,
             # collect the training loss
             with torch.amp.autocast(device_type=device.type, enabled=use_amp):
                 outputs, out_lens = model.forward(specs, seq_lens)
-                loss = loss_fn(outputs, out_lens.cpu(), targets, target_lens.cpu())
+                loss = loss_fn(
+                    blank=BLANK_TOKEN_ID,
+                    log_probs=outputs,
+                    seq_lens=out_lens.cpu(),
+                    targets=targets,
+                    target_lens=target_lens.cpu(),
+                )
 
             risk += loss.item()
             # backward pass (scaled for mixed precision)
@@ -299,7 +307,10 @@ def train(model: nn.Module,
         # ------------------------------------------------------------------ #
         if val_loader is not None:
             v_loss, v_cer, v_wer = test(model, val_loader, loss_fn, device, tokenizer)
-            print(f"[ Val ] Epoch {epoch+1}/{max_epochs}  Loss: {v_loss:.6f}  CER: {v_cer:.4f}  WER: {v_wer:.4f}")
+            print(f"[ Val ] Epoch {epoch}/{max_epochs}  Loss: {v_loss:.6f}  CER: {v_cer:.4f}  WER: {v_wer:.4f}")
+            if scheduler is not None:
+                scheduler.step(v_loss)
+                print(f"[ LR  ] {scheduler.get_last_lr()[0]:.2e}")
         else:
             v_loss, v_cer, v_wer = [-1,-1,-1] # negative values indicate undefined (for saving history)
 
@@ -358,7 +369,13 @@ def test(model: nn.Module,
 
             # forward pass
             log_probs, out_lens = model.forward(specs, seq_lens)
-            loss = loss_fn(log_probs, out_lens.cpu(), targets, target_lens.cpu())
+            loss = loss_fn(
+                    blank=BLANK_TOKEN_ID,
+                    log_probs=log_probs,
+                    seq_lens=out_lens.cpu(),
+                    targets=targets,
+                    target_lens=target_lens.cpu(),
+                )
             risk += loss.item()
 
             refs = _decode_targets(targets.cpu(), target_lens.cpu(), tokenizer)
