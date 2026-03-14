@@ -59,12 +59,12 @@ class DeepSpeech2(nn.Module):
         self.logSoftmax = nn.LogSoftmax(dim=2) # head output shape: [batch, time, logits], log softmax on logits
         # 4b. softmax activation (only during inference): character logits -> character probabilities
         self.softmax = nn.Softmax(dim=2)       # head output shape: [batch, time, logits], softmax on logits
-        # 5. loss function
-        self.CTCLoss = nn.CTCLoss(blank=self.blank_token_id, reduction='mean')
     
-    def forward(self,
-                x, # [batch, channel, frequency, time]
-                seq_lens):
+    def forward(
+        self,
+        x, # [batch, channel, frequency, time]
+        seq_lens
+    ):
         out, final_seq_lens = self.feature_extractor(x, seq_lens)
         out = self.gru(out, final_seq_lens)
         out = self.lookAheadConv(out)
@@ -72,15 +72,24 @@ class DeepSpeech2(nn.Module):
         out = self.logSoftmax(out)
         return out, final_seq_lens
 
-    def loss_fn(self,
-                log_probs,    # [batch, time, log character probability]
-                seq_lens,     # [sequence length]
-                targets,      # [all targets over all batches]
-                target_lens): # [target length]
+    @staticmethod
+    def loss_fn(
+        blank,
+        log_probs,    # [batch, time, log character probability]
+        seq_lens,     # [sequence length]
+        targets,      # [all targets over all batches]
+        target_lens,
+        reduction='mean'
+    ): # [target length]
         # nn.CTCLoss expects log_probs of shape [input (time), batch, class]
         log_probs = log_probs.transpose(0,1)
-        return self.CTCLoss(log_probs=log_probs,
-                            targets=targets,
-                            input_lengths=seq_lens,
-                            target_lengths=target_lens)
+        loss = nn.CTCLoss(
+            blank=blank, reduction=reduction
+        )
+        return loss(
+            log_probs=log_probs,
+            targets=targets,
+            input_lengths=seq_lens,
+            target_lengths=target_lens
+        )
 
