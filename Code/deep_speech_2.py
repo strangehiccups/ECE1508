@@ -69,10 +69,7 @@ class DeepSpeech2(nn.Module):
         out = self.gru(out, final_seq_lens)
         out = self.lookAheadConv(out)
         out = self.head(out)
-        if self.training:
-            out = self.logSoftmax(out)
-        else:
-            out = self.softmax(out)
+        out = self.logSoftmax(out)
         return out, final_seq_lens
 
     @staticmethod
