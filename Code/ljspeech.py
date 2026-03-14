@@ -8,11 +8,9 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from transformers import Wav2Vec2CTCTokenizer
+from config import TOKENIZER
 
 from utils import AudioSample, get_audio_mel_spectrogram
-
-tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
 
 logger = logging.getLogger(__name__)
 if not logger.hasHandlers():
@@ -68,7 +66,7 @@ class LJSpeechDataset(Dataset):
         raw_text = self.labels.get(file_path.stem)
         try:
             raw_text = raw_text.upper()
-            tokenized_text = tokenizer.encode(raw_text)
+            tokenized_text = TOKENIZER.encode(raw_text)
         except AttributeError:
             logger.warning(f"Missing label for file: {file_path.name}. Skipping sample.")
             return None

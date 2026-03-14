@@ -39,9 +39,7 @@ class Decoder(nn.Module):
         self.nbest = nbest
         self.beam_size = beam_size
         if torch.cuda.is_available():
-            self.decoder = cuda_ctc_decoder(lexicon=self.lexicon,
-                                            tokens=self.tokens,
-                                            blank_token=self.blank_token,
+            self.decoder = cuda_ctc_decoder(tokens=self.tokens,
                                             lm=self.lm,
                                             nbest=self.nbest,
                                             beam_size=self.beam_size)
@@ -76,7 +74,7 @@ class Decoder(nn.Module):
         with torch.no_grad():
             log_probs, out_lens = model(specs, spec_lengths)
         if torch.cuda.is_available():
-            results = self.decoder(log_probs, out_lens)
+            results = self.decoder(log_probs, out_lens.to(torch.int32))
         else:
             results = self.decoder(log_probs.cpu(), out_lens.cpu())
         # token ids to text
