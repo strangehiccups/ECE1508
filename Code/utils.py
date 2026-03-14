@@ -5,18 +5,33 @@ import librosa.display
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
 import transformers
+import os
+
+from torch.utils.data import DataLoader
 from transformers import Wav2Vec2CTCTokenizer
 from torchmetrics.text import CharErrorRate, WordErrorRate
 from tqdm.auto import tqdm
-import os
+from dataclasses import dataclass
+from typing import Optional
+
 
 HOP_LENGTH = 256
 N_FFT = 512
 N_MELS = 80
 SAMPLE_RATE = 22050
 SAVE_MODEL_PATH = "model.pth"
+
+
+@dataclass(frozen=True)
+class AudioSample:
+    raw_audio: np.ndarray
+    mel_audio: np.ndarray
+    sample_rate: int
+    file_path: str
+    raw_text: str
+    tokenized_text: Optional[np.ndarray] = None
+
 
 def get_audio_duration(audio, sample_rate):
     return len(audio) / sample_rate
@@ -51,6 +66,49 @@ def plot_audio_mel_spectrogram(mel_spectrogram: torch.Tensor, sample_rate: int =
     plt.colorbar(format='%+2.0f dB')
     plt.title('Mel Spectrogram')
     plt.show()
+
+# Collate function for DataLoader to handle variable-length spectrograms and transcripts
+def collate_fn(batch) -> Optional[dict]:
+    batch = [sample for sample in batch if sample is not None]
+    if len(batch) == 0:
+        return None
+
+    audios = [sample.mel_audio for sample in batch]
+    tokenized_texts = [sample.tokenized_text for sample in batch]
+
+    # Sort by descending spectrogram length (required for pack_padded_sequence)
+    batch = sorted(zip(audios, tokenized_texts), key=lambda x: x[0].shape[1], reverse=True)
+    audios, tokenized_texts = zip(*batch)
+
+    input_lengths = torch.tensor([a.shape[1] for a in audios], dtype=torch.long)
+
+    # Pad to (batch, max_time_frames, n_mels), then reshape for CNN input
+    padded_spectrograms = torch.nn.utils.rnn.pad_sequence(
+        [a.transpose(0, 1) for a in audios],  # each: (time_frames, n_mels)
+        batch_first=True                       # output: (batch, max_time_frames, n_mels)
+    )
+    padded_spectrograms = padded_spectrograms.unsqueeze(1)       # (batch, 1, max_time_frames, n_mels)
+    padded_spectrograms = padded_spectrograms.permute(0, 1, 3, 2)  # (batch, 1, n_mels, max_time_frames)
+
+    # CTC loss expects transcripts concatenated into a single 1-D tensor
+    target_lengths = torch.tensor([len(t) for t in tokenized_texts], dtype=torch.long)
+    packed_transcripts = torch.cat([t.clone().detach().long() for t in tokenized_texts])
+
+    return {
+        'padded_spectrograms': padded_spectrograms,  # (batch, 1, n_mels, max_time_frames)
+        'input_lengths': input_lengths,
+        'packed_transcripts': packed_transcripts,
+        'target_lengths': target_lengths,
+    }
+
+def log_audio_sample(sample: AudioSample, title: str):
+    from IPython.display import display, Audio
+    print(f"--- {title} ---")
+    plot_audio_mel_spectrogram(sample.mel_audio.float(), sample_rate=sample.sample_rate)
+    print(f"Raw text: {sample.raw_text}")
+    print(f"Tokenized text: {sample.tokenized_text}")
+    print(f"Audio shape: {sample.raw_audio.shape}, Sample rate: {sample.sample_rate} Hz")
+    display(Audio(sample.raw_audio, rate=sample.sample_rate))
 
 # Save the trained model
 def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
