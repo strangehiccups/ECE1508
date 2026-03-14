@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset
 
 from utils import AudioSample, get_audio_mel_spectrogram
-
+from config import TOKENIZER
 
 # AI-generated code for logging setup. Not part of the original codebase, but included here for completeness.
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class LibriSpeechDataset(Dataset):
         raw_text = self.labels.get(file_path.stem, "")
         try:
             raw_text = raw_text.upper()
-            tokenized_text = tokenizer.encode(raw_text)
+            tokenized_text = TOKENIZER.encode(raw_text)
         except AttributeError:
             logger.warning(f"Missing transcript for {file_path.name}. Skipping sample.")
             return None
