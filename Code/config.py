@@ -18,3 +18,7 @@ HISTORY_KEYS = [
 
 TOKENIZER = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")
 BLANK_TOKEN_ID = TOKENIZER.pad_token_id
+
+# -- Language-model-augmented beam search -------------------------------------
+LM_WEIGHT      = 1.5    # How much to weight the language model vs. the acoustic model
+WORD_SCORE     = -0.5   # Value added to the score of each word to encourage or discourage the decoder from outputting more words. 
