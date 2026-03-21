@@ -74,11 +74,7 @@ def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RAT
         sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels, power=2.0
     )
     S = mel_transform(audio)
-    
-    amplitude_to_db = T.AmplitudeToDB(stype='power', top_db=n_mels)
-    S_db = amplitude_to_db(S)
-    
-    return (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6) # Normalize to [0, 1]
+    return torch.log(S + 1e-9)  # log-mel; BatchNorm in the CNN handles normalisation
 
 
 # SpecAugment paper: https://www.isca-archive.org/interspeech_2019/park19e_interspeech.pdf
@@ -166,7 +162,7 @@ def collate_fn_train(batch) -> Optional[dict]:
     if len(batch) == 0:
         return None
 
-    mels = [_pick_mel(s, ('mel_audio_spec_augment')) for s in batch]
+    mels = [_pick_mel(s, ('mel_audio_spec_augment',)) for s in batch]
     tokenized_texts = [sample.tokenized_text for sample in batch]
     return _collate_from_mels(mels, tokenized_texts)
 
@@ -176,7 +172,7 @@ def collate_fn_eval(batch) -> Optional[dict]:
     if len(batch) == 0:
         return None
 
-    mels = [_pick_mel(s, ('raw_mel_audio')) for s in batch]
+    mels = [_pick_mel(s, ('raw_mel_audio',)) for s in batch]
     tokenized_texts = [sample.tokenized_text for sample in batch]
     return _collate_from_mels(mels, tokenized_texts)
 
