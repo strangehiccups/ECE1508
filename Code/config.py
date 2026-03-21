@@ -1,4 +1,16 @@
+from enum import Enum
 from transformers import Wav2Vec2CTCTokenizer
+
+class Dataset(Enum):
+    LJSPEECH = 1
+    LIBRISPEECH = 2
+    MIXED = 3
+
+class TemporalNetwork(Enum):
+    GRU = 1
+    GRU_BIDIRECTIONAL = 2
+    LSTM = 3
+    TRANSFORMER = 4
 
 HOP_LENGTH = 256
 N_FFT = 512
@@ -14,6 +26,8 @@ HISTORY_KEYS = [
     "val_cer",
     "train_wer",
     "val_wer",
+    "train_time",
+    "val_time"
 ]
 
 TOKENIZER = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-base")

@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import transformers
 import os
+import time
 
 from torch.utils.data import DataLoader
 from transformers import Wav2Vec2CTCTokenizer
@@ -252,12 +253,15 @@ def train(model: nn.Module,
 
     for epoch in tqdm(range(start_epoch, max_epochs+1), desc="epoch", position=0):
         # ------------------------------------------------------------------ #
-        # 1. Training pass                                                    #
+        # 1. Training pass                                                   #
         # ------------------------------------------------------------------ #
         risk = 0.0
         epoch_refs, epoch_hyps = [], []
+        train_epoch_time = 0.0; val_epoch_time = 0.0; # in seconds
         model.train()
         for i, batch in tqdm(enumerate(train_loader), desc="batch", position=1, leave=False, total=num_train_batches):
+            batch_start_time = time.time()
+            
             specs      = batch['padded_spectrograms']
             seq_lens   = batch['input_lengths']
             targets    = batch['packed_transcripts']
@@ -287,6 +291,8 @@ def train(model: nn.Module,
             scaler.step(optimiser)
             scaler.update()
 
+            train_epoch_time += time.time() - batch_start_time
+            
             # Accumulate predictions/references for CER/WER (detach from graph)
             with torch.no_grad():
                 refs = _decode_targets(targets.cpu(), target_lens.cpu(), tokenizer)
@@ -306,7 +312,9 @@ def train(model: nn.Module,
         # 2. Validation pass                                                  #
         # ------------------------------------------------------------------ #
         if val_loader is not None:
+            epoch_start_time = time.time()
             v_loss, v_cer, v_wer = test(model, val_loader, loss_fn, device, tokenizer)
+            val_epoch_time = time.time() - epoch_start_time
             print(f"[ Val ] Epoch {epoch}/{max_epochs}  Loss: {v_loss:.6f}  CER: {v_cer:.4f}  WER: {v_wer:.4f}")
             if scheduler is not None:
                 scheduler.step(v_loss)
@@ -328,7 +336,9 @@ def train(model: nn.Module,
              epoch_cer,
              v_cer,
              epoch_wer,
-             v_wer]
+             v_wer,
+             train_epoch_time,
+             val_epoch_time]
         )
 
         if loss <= loss_threshold:  # early termination
