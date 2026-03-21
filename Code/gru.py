@@ -36,12 +36,6 @@ class GRU(nn.Module):
             for i in range(self.num_layers)
         ])
 
-        self.learnable_parameters = 0
-        input_size = self.input_size
-        for _ in range(self.num_layers):
-            self.learnable_parameters += self.layer_parameters(input_size)
-            input_size = self.output_size
-
     def layer_parameters(self, input_size: int):
         return 3*self.hidden_size*input_size \
              + 3*self.hidden_size*self.hidden_size \
