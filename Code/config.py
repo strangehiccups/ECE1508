@@ -36,3 +36,5 @@ BLANK_TOKEN_ID = TOKENIZER.pad_token_id
 # -- Language-model-augmented beam search -------------------------------------
 LM_WEIGHT      = 1.5    # How much to weight the language model vs. the acoustic model
 WORD_SCORE     = -0.5   # Value added to the score of each word to encourage or discourage the decoder from outputting more words. 
+LM_ARPA_PATH   = "../data/lm/kenlm_3gram.arpa"
+LEXICON_PATH   = "../data/lm/librispeech-lexicon-grapheme.txt"
