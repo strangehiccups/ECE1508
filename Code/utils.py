@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import librosa
-import librosa.display
+import torch
+import torchaudio
+import torchaudio.transforms as T
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -34,16 +35,16 @@ from torchmetrics.text import CharErrorRate, WordErrorRate
 
 @dataclass(frozen=True)
 class AudioSample:
-    raw_audio: np.ndarray
-    mel_audio: np.ndarray
+    raw_audio: torch.Tensor
+    mel_audio: torch.Tensor
     sample_rate: int
     file_path: str
     raw_text: str
-    tokenized_text: Optional[np.ndarray] = None
+    tokenized_text: Optional[torch.Tensor] = None
 
 
 def get_audio_duration(audio, sample_rate):
-    return len(audio) / sample_rate
+    return audio.shape[-1] / sample_rate
 
 # n_FFT algorithms are optimized for powers of two (e.g., 512, 1024, 2048).
 # 512 is a common choice for speech to balance time and frequency resolution.
@@ -54,20 +55,33 @@ def get_audio_duration(audio, sample_rate):
 # n_mels is typically set to 80 for ASR tasks, providing a good balance between frequency resolution and computational efficiency.
 # 80 is also the default in many ASR models, including OpenAI's Whisper, and is widely used in the research community for speech recognition tasks.
 
-def get_audio_mel_spectrogram(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, n_fft: int = N_FFT, hop_length: int = HOP_LENGTH, n_mels: int = N_MELS) -> np.ndarray:  # Hop length set to 512 as recommended for Audio processing
+def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RATE, n_fft: int = N_FFT, hop_length: int = HOP_LENGTH, n_mels: int = N_MELS) -> torch.Tensor:
+    # Librosa defaults to mono=True, which forcibly averages multiple channels into 1D (time,).
+    # Since torchaudio preserves channels e.g. (channels, time), we must average them to 
+    # prevent the extra dimension from breaking the downstream pad_sequence!
+    if audio.dim() > 1:
+        audio = audio.mean(dim=0)
+
     # Resample if the audio sample rate is different from the expected SAMPLE_RATE
     if sample_rate != SAMPLE_RATE:
-        audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=SAMPLE_RATE)
+        resampler = T.Resample(orig_freq=sample_rate, new_freq=SAMPLE_RATE)
+        audio = resampler(audio)
         sample_rate = SAMPLE_RATE
-    S = librosa.feature.melspectrogram(
-        y=audio, sr=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels
+        
+    mel_transform = T.MelSpectrogram(
+        sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels, power=2.0
     )
-    S_db = librosa.power_to_db(S, ref=np.max)
-    return (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6) # Normalize to [0, 1]
+    S = mel_transform(audio)
+    
+    amplitude_to_db = T.AmplitudeToDB(stype='power', top_db=n_mels)
+    S_db = amplitude_to_db(S)
+    
+    return (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6)
 
-def plot_waveform(audio, sample_rate):
+def plot_waveform(audio: torch.Tensor, sample_rate: int):
     plt.figure(figsize=(12, 4))
-    librosa.display.waveshow(audio, sr=sample_rate)
+    time_axis = torch.arange(audio.shape[-1]) / sample_rate
+    plt.plot(time_axis, audio.squeeze().numpy())
     plt.title('Waveform')
     plt.xlabel('Time (s)')
     plt.ylabel('Amplitude')
@@ -75,7 +89,7 @@ def plot_waveform(audio, sample_rate):
 
 def plot_audio_mel_spectrogram(mel_spectrogram: torch.Tensor, sample_rate: int = SAMPLE_RATE, hop_length: int = HOP_LENGTH):
     plt.figure(figsize=(12, 8))
-    librosa.display.specshow(mel_spectrogram.numpy(), sr=sample_rate, hop_length=hop_length, y_axis='mel', x_axis='time')
+    plt.imshow(mel_spectrogram.squeeze().numpy(), aspect='auto', origin='lower', interpolation='none')
     plt.colorbar(format='%+2.0f dB')
     plt.title('Mel Spectrogram')
     plt.show()
@@ -121,7 +135,7 @@ def log_audio_sample(sample: AudioSample, title: str):
     print(f"Raw text: {sample.raw_text}")
     print(f"Tokenized text: {sample.tokenized_text}")
     print(f"Audio shape: {sample.raw_audio.shape}, Sample rate: {sample.sample_rate} Hz")
-    display(Audio(sample.raw_audio, rate=sample.sample_rate))
+    display(Audio(sample.raw_audio.squeeze().numpy(), rate=sample.sample_rate))
 
 # Save the trained model
 def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
@@ -267,8 +281,8 @@ def train(model: nn.Module,
             targets    = batch['packed_transcripts']
             target_lens = batch['target_lengths']
             # move tensors to device (lengths must stay on CPU for CTCLoss)
-            specs = specs.to(device=device)
-            targets = targets.to(device=device)
+            specs = specs.to(device=device, non_blocking=True)
+            targets = targets.to(device=device, non_blocking=True)
             # forward pass with mixed precision
             optimiser.zero_grad()
             # collect the training loss
