@@ -35,6 +35,7 @@ class GRU(nn.Module):
             nn.LayerNorm(self.output_size)
             for i in range(self.num_layers)
         ])
+        self.drop = nn.Dropout(p=self.dropout)
 
     def layer_parameters(self, input_size: int):
         return 3*self.hidden_size*input_size \
@@ -60,4 +61,7 @@ class GRU(nn.Module):
                                                       total_length=seq_len,
                                                       batch_first=True)
             out = self.lns[l](out)
+            # Apply dropout between layers only (not after the final layer) to regularise inter-layer representations
+            if l < self.num_layers - 1:
+                out = self.drop(out)
         return out # [batch, time, hidden state sequences]
