@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 
-import librosa
+import torchaudio
 import numpy as np
 import pandas as pd
 import torch
@@ -60,7 +60,7 @@ class LJSpeechDataset(Dataset):
 
     def __getitem__(self, idx) -> AudioSample:
         file_path = self.file_paths[idx]
-        audio, sr = librosa.load(file_path, sr=None)
+        audio, sr = torchaudio.load(file_path)
         mel_audio = get_audio_mel_spectrogram(audio, sr)
 
         raw_text = self.labels.get(file_path.stem)
@@ -73,7 +73,7 @@ class LJSpeechDataset(Dataset):
 
         return AudioSample(
             raw_audio=audio,
-            mel_audio=torch.tensor(mel_audio, dtype=torch.float32),
+            mel_audio=mel_audio,
             sample_rate=sr,
             file_path=str(file_path),
             raw_text=raw_text,
