@@ -23,8 +23,6 @@ class CNNLayer(nn.Module):
         self.bn = torch.nn.BatchNorm2d(out_channels)
         self.clipped_relu = lambda x: torch.clamp(x, min=0, max=20)
 
-        # TODO: calculate self.learnable_parameters - total no. of parameters learnt in the CNN block
-
     def forward(self, x, seq_lens):
         # Expected input shape: (batch_size, channels, frequency, time)
         x = self.cnn(x)

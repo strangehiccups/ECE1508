@@ -22,10 +22,6 @@ class LookAheadConv(nn.Module):
                               bias=False) # batch norm renders bias irrelevant
         self.LN = nn.LayerNorm(self.output_size)
 
-        self.learnable_parameters = self.output_size*self.kernel_size**2 \
-                                  + 2*self.output_size
-
-    # TO CONSIDER: transpose-free implementation with learnable weight matrix and simple tensor operations (efficiency gained might not make up for highly optimised Conv1d)
     def forward(self,
                 x): # [batch, time, features]
         # Pad future context on right
