@@ -72,12 +72,10 @@ def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RAT
     )
     S = mel_transform(audio)
     
-    amplitude_to_db = T.AmplitudeToDB(stype='power', top_db=80)
+    amplitude_to_db = T.AmplitudeToDB(stype='power', top_db=n_mels)
     S_db = amplitude_to_db(S)
     
-    normalized = (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6)
-    
-    return normalized
+    return (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6)
 
 def plot_waveform(audio: torch.Tensor, sample_rate: int):
     plt.figure(figsize=(12, 4))
