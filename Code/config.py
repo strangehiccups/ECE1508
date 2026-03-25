@@ -18,6 +18,7 @@ N_MELS = 80
 SAMPLE_RATE = 16000
 
 SAVE_MODEL_PATH = "model.pth"
+SAVE_BEST_MODEL_PATH = "model_best.pth"
 SAVE_HISTORY_PATH = "history.h5"
 HISTORY_KEYS = [
     "train_loss",
