@@ -102,7 +102,8 @@ class LibriSpeechDataset(Dataset):
 
         return AudioSample(
             raw_audio=audio,
-            mel_audio=mel_audio,
+            raw_mel_audio=mel_audio,
+            mel_audio_spec_augment=None,
             sample_rate=sr,
             file_path=str(file_path),
             raw_text=raw_text,

@@ -36,7 +36,7 @@ from torchmetrics.text import CharErrorRate, WordErrorRate
 
 @dataclass(frozen=True)
 class AudioSample:
-    raw_audio: torch.Tensor
+    raw_audio: Optional[torch.Tensor]  # only needed for debug display; None on cache hits
     raw_mel_audio: torch.Tensor
     mel_audio_spec_augment: Optional[torch.Tensor]
     sample_rate: int

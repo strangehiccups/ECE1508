@@ -5,6 +5,7 @@ class Dataset(Enum):
     LJSPEECH = 1
     LIBRISPEECH = 2
     MIXED = 3
+    LIBRISPEECH_FINETUNING = 4
 
 class TemporalNetwork(Enum):
     GRU = 1
