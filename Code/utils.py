@@ -390,7 +390,7 @@ def train(model: nn.Module,
             if i % 10 == 0:
                 print(f"Epoch {epoch}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
 
-        epoch_loss = risk / train_set_size
+        epoch_loss = risk / num_train_batches
         epoch_cer  = CharErrorRate()(epoch_hyps, epoch_refs).item()
         epoch_wer  = WordErrorRate()(epoch_hyps, epoch_refs).item()
         print(f"[Train] Epoch {epoch}/{max_epochs}  Loss: {epoch_loss:.6f}  CER: {epoch_cer:.4f}  WER: {epoch_wer:.4f}")
@@ -484,7 +484,7 @@ def test(model: nn.Module,
             all_refs.extend(refs)
             all_hyps.extend(hyps)
 
-    avg_loss = risk / len(test_loader.dataset)
+    avg_loss = risk / len(test_loader)
     cer = CharErrorRate()(all_hyps, all_refs).item()
     wer = WordErrorRate()(all_hyps, all_refs).item()
     return avg_loss, cer, wer
