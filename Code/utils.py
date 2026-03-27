@@ -27,6 +27,7 @@ from config import (
     HOP_LENGTH,
     N_MELS,
     SAVE_MODEL_PATH,
+    SAVE_BEST_MODEL_PATH,
     SAVE_HISTORY_PATH
 )
 
@@ -35,8 +36,9 @@ from torchmetrics.text import CharErrorRate, WordErrorRate
 
 @dataclass(frozen=True)
 class AudioSample:
-    raw_audio: torch.Tensor
-    mel_audio: torch.Tensor
+    raw_audio: Optional[torch.Tensor]  # only needed for debug display; None on cache hits
+    raw_mel_audio: torch.Tensor
+    mel_audio_spec_augment: Optional[torch.Tensor]
     sample_rate: int
     file_path: str
     raw_text: str
@@ -46,6 +48,7 @@ class AudioSample:
 def get_audio_duration(audio, sample_rate):
     return audio.shape[-1] / sample_rate
 
+
 # n_FFT algorithms are optimized for powers of two (e.g., 512, 1024, 2048).
 # 512 is a common choice for speech to balance time and frequency resolution.
 # if the nfft is too small, the spectrogram will have poor frequency resolution, making it harder to distinguish between different phonemes. 
@@ -54,7 +57,6 @@ def get_audio_duration(audio, sample_rate):
 # capturing rapid changes in speech.
 # n_mels is typically set to 80 for ASR tasks, providing a good balance between frequency resolution and computational efficiency.
 # 80 is also the default in many ASR models, including OpenAI's Whisper, and is widely used in the research community for speech recognition tasks.
-
 def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RATE, n_fft: int = N_FFT, hop_length: int = HOP_LENGTH, n_mels: int = N_MELS) -> torch.Tensor:
     # Librosa defaults to mono=True, which forcibly averages multiple channels into 1D (time,).
     # Since torchaudio preserves channels e.g. (channels, time), we must average them to 
@@ -72,11 +74,30 @@ def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RAT
         sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels, power=2.0
     )
     S = mel_transform(audio)
-    
-    amplitude_to_db = T.AmplitudeToDB(stype='power', top_db=n_mels)
-    S_db = amplitude_to_db(S)
-    
-    return (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6) # Normalize to [0, 1]
+    return torch.log(S + 1e-9)  # log-mel; BatchNorm in the CNN handles normalisation
+
+
+# SpecAugment paper: https://www.isca-archive.org/interspeech_2019/park19e_interspeech.pdf
+# time_mask_param: maximum width of the time mask (in frames)
+# freq_mask_param: maximum width of the frequency mask (in mel bins)
+# Check Table 1. in this paper, set the # of params based on Libri Double (which is basically)
+# for multi-speaker (and I've set it to this currently in preparation for libri-small)
+def spec_augment(mel_spectrogram: torch.Tensor, time_mask_param: int = 30, freq_mask_param: int = 13) -> torch.Tensor:
+    # Clone to avoid in-place mutation of the original mel spectrogram.
+    augmented = mel_spectrogram.clone()
+
+    # Guard against short utterances so mask widths do not exceed dimensions.
+    freq_bins = augmented.shape[-2]
+    time_steps = augmented.shape[-1]
+    safe_freq_mask = min(freq_mask_param, max(1, freq_bins - 1))
+    safe_time_mask = min(time_mask_param, max(1, time_steps - 1))
+
+    augmented = T.FrequencyMasking(safe_freq_mask)(augmented)
+    augmented = T.FrequencyMasking(safe_freq_mask)(augmented)
+    augmented = T.TimeMasking(safe_time_mask)(augmented)
+    augmented = T.TimeMasking(safe_time_mask)(augmented)
+    return augmented
+
 
 def plot_waveform(audio: torch.Tensor, sample_rate: int):
     plt.figure(figsize=(12, 4))
@@ -87,24 +108,19 @@ def plot_waveform(audio: torch.Tensor, sample_rate: int):
     plt.ylabel('Amplitude')
     plt.show()
 
+
 def plot_audio_mel_spectrogram(mel_spectrogram: torch.Tensor, sample_rate: int = SAMPLE_RATE, hop_length: int = HOP_LENGTH):
     plt.figure(figsize=(12, 8))
     plt.imshow(mel_spectrogram.squeeze().numpy(), aspect='auto', origin='lower', interpolation='none')
     plt.colorbar(format='%+2.0f dB')
-    plt.title('Mel Spectrogram')
+    plt.title(f'Mel Spectrogram (Sample Rate: {sample_rate} Hz, Hop Length: {hop_length} samples)')
     plt.show()
 
+
 # Collate function for DataLoader to handle variable-length spectrograms and transcripts
-def collate_fn(batch) -> Optional[dict]:
-    batch = [sample for sample in batch if sample is not None]
-    if len(batch) == 0:
-        return None
-
-    audios = [sample.mel_audio for sample in batch]
-    tokenized_texts = [sample.tokenized_text for sample in batch]
-
+def _collate_from_mels(mels: list[torch.Tensor], tokenized_texts: list[torch.Tensor]) -> dict:
     # Sort by descending spectrogram length (required for pack_padded_sequence)
-    batch = sorted(zip(audios, tokenized_texts), key=lambda x: x[0].shape[1], reverse=True)
+    batch = sorted(zip(mels, tokenized_texts), key=lambda x: x[0].shape[1], reverse=True)
     audios, tokenized_texts = zip(*batch)
 
     input_lengths = torch.tensor([a.shape[1] for a in audios], dtype=torch.long)
@@ -114,8 +130,8 @@ def collate_fn(batch) -> Optional[dict]:
         [a.transpose(0, 1) for a in audios],  # each: (time_frames, n_mels)
         batch_first=True                       # output: (batch, max_time_frames, n_mels)
     )
-    padded_spectrograms = padded_spectrograms.unsqueeze(1)       # (batch, 1, max_time_frames, n_mels)
-    padded_spectrograms = padded_spectrograms.permute(0, 1, 3, 2)  # (batch, 1, n_mels, max_time_frames)
+    padded_spectrograms = padded_spectrograms.unsqueeze(1)         # (batch, 1, max_time_frames, n_mels)
+    padded_spectrograms = padded_spectrograms.permute(0, 1, 3, 2)   # (batch, 1, n_mels, max_time_frames)
 
     # CTC loss expects transcripts concatenated into a single 1-D tensor
     target_lengths = torch.tensor([len(t) for t in tokenized_texts], dtype=torch.long)
@@ -128,14 +144,56 @@ def collate_fn(batch) -> Optional[dict]:
         'target_lengths': target_lengths,
     }
 
+
+def _pick_mel(sample, attrs):
+    for attr in attrs:
+        val = getattr(sample, attr, None)
+        if val is not None:
+            return val
+    return None
+
+
+# We have different collate functions for train/eval because
+# we cannot run SpecAugment pre-processing on validation sets,
+# and this was easier than figuring out how to parametrize the
+# dataloader
+def collate_fn_train(batch) -> Optional[dict]:
+    batch = [sample for sample in batch if sample is not None]
+    if len(batch) == 0:
+        return None
+
+    mels = [_pick_mel(s, ('mel_audio_spec_augment',)) for s in batch]
+    tokenized_texts = [sample.tokenized_text for sample in batch]
+    return _collate_from_mels(mels, tokenized_texts)
+
+
+def collate_fn_eval(batch) -> Optional[dict]:
+    batch = [sample for sample in batch if sample is not None]
+    if len(batch) == 0:
+        return None
+
+    mels = [_pick_mel(s, ('raw_mel_audio',)) for s in batch]
+    tokenized_texts = [sample.tokenized_text for sample in batch]
+    return _collate_from_mels(mels, tokenized_texts)
+
+
+# Backward-compatible default: training collate (includes SpecAugment when present).
+def collate_fn(batch) -> Optional[dict]:
+    return collate_fn_train(batch)
+
+
 def log_audio_sample(sample: AudioSample, title: str):
     from IPython.display import display, Audio
     print(f"--- {title} ---")
-    plot_audio_mel_spectrogram(sample.mel_audio.float(), sample_rate=sample.sample_rate)
+    # True audio
+    plot_audio_mel_spectrogram(sample.raw_mel_audio.float(), sample_rate=sample.sample_rate)
+    # Time/Frequency-masked sample
+    plot_audio_mel_spectrogram(sample.mel_audio_spec_augment.float(), sample_rate=sample.sample_rate)
     print(f"Raw text: {sample.raw_text}")
     print(f"Tokenized text: {sample.tokenized_text}")
     print(f"Audio shape: {sample.raw_audio.shape}, Sample rate: {sample.sample_rate} Hz")
     display(Audio(sample.raw_audio.squeeze().numpy(), rate=sample.sample_rate))
+
 
 # Save the trained model
 def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
@@ -150,6 +208,7 @@ def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
     
     torch.save(checkpoint, filepath)
     print(f"Checkpoint saved to {filepath} at epoch {epoch}")
+
 
 # Load the saved model.
 def load_model(model, device, filepath=SAVE_MODEL_PATH, optimizer=None):
@@ -177,6 +236,7 @@ def load_model(model, device, filepath=SAVE_MODEL_PATH, optimizer=None):
     print(f"Checkpoint loaded successfully. Resuming from epoch {epoch}.")
     return epoch, loss
 
+
 def save_history(history_values: list, path: str=SAVE_HISTORY_PATH):
     if len(history_values) != len(HISTORY_KEYS):
         print(f'no. of history values {len(history_values)} does not match no. of history keys {len(HISTORY_KEYS)}')
@@ -194,6 +254,7 @@ def save_history(history_values: list, path: str=SAVE_HISTORY_PATH):
             arr.resize((new_size,))
             arr[n] = history_values[i]
 
+
 def load_h5_struct(filename: str):
     history = {}
     try:
@@ -203,6 +264,7 @@ def load_h5_struct(filename: str):
     except FileNotFoundError:
         history = None
     return history
+
 
 def ctc_greedy_decode(log_probs: torch.Tensor,
                       output_lengths: torch.Tensor,
@@ -256,6 +318,7 @@ def train(model: nn.Module,
           start_epoch: int=0,
           max_epochs: int=20,
           scheduler: optim.lr_scheduler.LRScheduler=None,
+          batch_scheduler: optim.lr_scheduler.LRScheduler=None,
           device: torch.device=None):
 
     model = model.to(device=device)
@@ -264,6 +327,7 @@ def train(model: nn.Module,
 
     num_train_batches = len(train_loader)
     train_set_size    = len(train_loader.dataset)
+    best_val_wer      = float('inf')
 
     for epoch in tqdm(range(start_epoch, max_epochs+1), desc="epoch", position=0):
         # ------------------------------------------------------------------ #
@@ -305,6 +369,15 @@ def train(model: nn.Module,
             scaler.step(optimiser)
             scaler.update()
 
+            # step the batch-level scheduler (e.g., OneCycleLR) after each batch, if provided
+            # this allows for more fine-grained control over the learning rate within an epoch
+            # without this, we were noticing that the learning rate only updated after each epoch,
+            # and was actually contributing to overfitting
+            # Basically Epoch-level PlateauLR reacts after each epoch based on val loss, while
+            # batch-level OneCycleLR updates after each batch based on the total number of batches and epochs.
+            if batch_scheduler is not None:
+                batch_scheduler.step()
+
             train_epoch_time += time.time() - batch_start_time
             
             # Accumulate predictions/references for CER/WER (detach from graph)
@@ -317,7 +390,7 @@ def train(model: nn.Module,
             if i % 10 == 0:
                 print(f"Epoch {epoch}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
 
-        epoch_loss = risk / train_set_size
+        epoch_loss = risk / num_train_batches
         epoch_cer  = CharErrorRate()(epoch_hyps, epoch_refs).item()
         epoch_wer  = WordErrorRate()(epoch_hyps, epoch_refs).item()
         print(f"[Train] Epoch {epoch}/{max_epochs}  Loss: {epoch_loss:.6f}  CER: {epoch_cer:.4f}  WER: {epoch_wer:.4f}")
@@ -333,6 +406,10 @@ def train(model: nn.Module,
             if scheduler is not None:
                 scheduler.step(v_loss)
                 print(f"[ LR  ] {scheduler.get_last_lr()[0]:.2e}")
+            if v_wer < best_val_wer:
+                best_val_wer = v_wer
+                save_model(model, optimiser, epoch, loss=epoch_loss, filepath=SAVE_BEST_MODEL_PATH)
+                print(f"[ Best] New best val WER {best_val_wer:.4f} — checkpoint saved to {SAVE_BEST_MODEL_PATH}")
         else:
             v_loss, v_cer, v_wer = [-1,-1,-1] # negative values indicate undefined (for saving history)
 
@@ -340,7 +417,7 @@ def train(model: nn.Module,
             model=model,
             optimizer=optimiser,
             epoch=epoch,
-            loss=loss,
+            loss=epoch_loss,
             filepath=SAVE_MODEL_PATH
         )
 
@@ -355,7 +432,7 @@ def train(model: nn.Module,
              val_epoch_time]
         )
 
-        if loss <= loss_threshold:  # early termination
+        if epoch_loss <= loss_threshold:  # early termination
             break
 
     return load_h5_struct(SAVE_HISTORY_PATH)
@@ -407,7 +484,7 @@ def test(model: nn.Module,
             all_refs.extend(refs)
             all_hyps.extend(hyps)
 
-    avg_loss = risk / len(test_loader.dataset)
+    avg_loss = risk / len(test_loader)
     cer = CharErrorRate()(all_hyps, all_refs).item()
     wer = WordErrorRate()(all_hyps, all_refs).item()
     return avg_loss, cer, wer
