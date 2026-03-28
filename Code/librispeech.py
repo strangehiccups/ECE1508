@@ -112,6 +112,6 @@ class LibriSpeechDataset(Dataset):
             tokenized_text=torch.tensor(tokenized_text, dtype=torch.long),
         )
 
-def load_librispeech(data_dir: str, split: str = "test-clean", augment: bool = False) -> LibriSpeechDataset:
+def load_librispeech(data_dir: str, split: str = "test-clean", augment: bool = True) -> LibriSpeechDataset:
     """Helper function to load LibriSpeech dataset."""
     return LibriSpeechDataset(data_dir, split=split, augment=augment)
