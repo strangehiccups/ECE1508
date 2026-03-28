@@ -194,6 +194,12 @@ def log_audio_sample(sample: AudioSample, title: str):
     print(f"Audio shape: {sample.raw_audio.shape}, Sample rate: {sample.sample_rate} Hz")
     display(Audio(sample.raw_audio.squeeze().numpy(), rate=sample.sample_rate))
 
+# Maximum sequence length from data loader
+def max_seq_len(dataloader: torch.utils.data.dataloader.DataLoader):
+    max_len = float('-inf')
+    for batch in dataloader:
+        max_len = max(max_len, batch['target_lengths'].max().item())
+    return max_len
 
 # Save the trained model
 def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
