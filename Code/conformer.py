@@ -6,7 +6,7 @@ from cnn import ConvolutionFeatureExtractor
 from positional_encoding import PositionalEncoding
 
 # based on "Attention Is All You Need" (no need for decoder as CTC already aligns & decodes)
-class Transformer(nn.Module):
+class Conformer(nn.Module):
     def __init__(self,
                  max_seq_len: int=2000,
                  conv_in_channels: int=1,
@@ -15,6 +15,7 @@ class Transformer(nn.Module):
                  enc_nhead: int=4,              # number of heads in the multiheadattention models
                  enc_feedforward_dim: int=1024, # dimension of the feedforward network model
                  enc_dropout: float=0.1,
+                 enc_layers: int=6,
                  tokenizer: transformers.PreTrainedTokenizerBase=None):
         super().__init__()
         # 0. tokenizer
@@ -42,7 +43,7 @@ class Transformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(
             encoder_layer,
-            num_layers=6
+            num_layers=enc_layers
         )
         # 5. output layer: features -> character logits
         self.output_layer = nn.linear(enc_latent_dim, self.tokenizer.vocab_size)
