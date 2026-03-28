@@ -74,10 +74,13 @@ class Decoder(nn.Module):
     def decode_beam(self,
                     specs: torch.Tensor, # (B, C, F, T)
                     spec_lengths: torch.Tensor, # (B,)
-                    model: nn.Module) -> str:
-        model.eval()
-        with torch.no_grad():
-            log_probs, out_lens = model(specs, spec_lengths)
+                    model: nn.Module,
+                    log_probs: torch.Tensor=None, # cached model output; if provided, skips model forward pass
+                    out_lens: torch.Tensor=None) -> str:
+        if log_probs is None or out_lens is None:
+            model.eval()
+            with torch.no_grad():
+                log_probs, out_lens = model(specs, spec_lengths)
         if torch.cuda.is_available():
             results = self.decoder(log_probs.cpu(), out_lens.to(torch.int32))
         else:
