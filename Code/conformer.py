@@ -46,7 +46,7 @@ class Conformer(nn.Module):
             num_layers=enc_layers
         )
         # 5. output layer: features -> character logits
-        self.output_layer = nn.linear(enc_latent_dim, self.tokenizer.vocab_size)
+        self.output_layer = nn.Linear(enc_latent_dim, self.tokenizer.vocab_size)
         # 6. log softmax activation for CTC loss: character logits -> log character probabilities
         self.logSoftmax = nn.LogSoftmax(dim=2) # output layer's output shape: [batch, time, logits], log softmax on logits
     
@@ -61,7 +61,7 @@ class Conformer(nn.Module):
         # 3. mask future positions (True = pad)
         max_len = x.size(1)
         mask = torch.arange(max_len, device=x.device).expand(len(final_seq_lens), max_len)
-        src_key_padding_mask = mask >= final_seq_lens.unsqueeze(1)
+        src_key_padding_mask = mask >= final_seq_lens.to(x.device).unsqueeze(1)
         # 4. encode
         x = self.transformer(x, src_key_padding_mask=src_key_padding_mask)
         # 5. map to logits

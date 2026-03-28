@@ -29,8 +29,7 @@ class DeepSpeech2LSTM(nn.Module):
                  LSTM_depth: int=3,
                  LSTM_bidirectional: bool=False,
                  LSTM_dropout: float=0.3,
-                 look_ahead_context: int=40,
-                 device: torch.device=None):
+                 look_ahead_context: int=40):
         super().__init__()
         # 0. tokenizer
         self.tokenizer = tokenizer
@@ -40,8 +39,7 @@ class DeepSpeech2LSTM(nn.Module):
 
         # 1. feature extractor: time (x frequency) tensor -> feature maps
         self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels,
-                                                             out_channels=conv_out_channels,
-                                                             device=device)
+                                                             out_channels=conv_out_channels)
 
         # 2. LSTM block: stacked manually so LayerNorm can be applied between layers,
         #    matching gru.py's design.

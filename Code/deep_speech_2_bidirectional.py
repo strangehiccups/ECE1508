@@ -28,8 +28,7 @@ class DeepSpeech2Bidirectional(nn.Module):
                  GRU_hidden_size: int=512,   # DeepSpeech configuration (2560) is overkill for LJSpeech
                  GRU_depth: int=3,
                  GRU_bidirectional: bool=True, # no look ahead convolution to add future context
-                 GRU_dropout: float=0.3,
-                 device: torch.device=None):
+                 GRU_dropout: float=0.3):
         super().__init__()
         # 0. tokenizer
         self.tokenizer = tokenizer
@@ -38,15 +37,13 @@ class DeepSpeech2Bidirectional(nn.Module):
         self.blank_token_id = self.tokenizer.pad_token_id
         # 1. feature extractor: time (x frequency) tensor -> feature maps
         self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels,
-                                                             out_channels=conv_out_channels,
-                                                             device=device)
+                                                             out_channels=conv_out_channels)
         # 2. GRU block: features -> hidden state sequences (time-sequential information)
         self.gru = GRU(input_size=self.feature_extractor.output_size,
                        hidden_size=GRU_hidden_size,
                        num_layers=GRU_depth,
                        bidirectional=GRU_bidirectional,
-                       dropout=GRU_dropout,
-                       device=device)
+                       dropout=GRU_dropout)
         # 3. output layer: hidden state sequences with future context -> character logits
         self.head = nn.Linear(self.gru.output_size, self.tokenizer.vocab_size)
         # 3a. log softmax activation for CTC loss (only during training): character logits -> log character probabilities
