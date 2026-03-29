@@ -79,7 +79,9 @@ def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RAT
     mel_transform = T.MelSpectrogram(
         sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels, power=2.0
     )
+    amp2db_transform = T.AmplitudeToDB(top_db=80.0)
     S = mel_transform(audio)
+    S = amp2db_transform(S)
     return torch.log(S + 1e-9)  # log-mel; BatchNorm in the CNN handles normalisation
 
 
@@ -168,7 +170,7 @@ def collate_fn_train(batch) -> Optional[dict]:
     if len(batch) == 0:
         return None
 
-    mels = [_pick_mel(s, ('mel_audio_spec_augment',)) for s in batch]
+    mels = [_pick_mel(s, ('mel_audio_spec_augment', 'raw_mel_audio')) for s in batch]
     tokenized_texts = [sample.tokenized_text for sample in batch]
     return _collate_from_mels(mels, tokenized_texts)
 
@@ -280,7 +282,7 @@ def save_history(history_values: list, path: str=SAVE_HISTORY_PATH):
 def load_h5_struct(file_path: str=SAVE_HISTORY_PATH):
     history = {}
     try:
-        with h5py.File(file_path, "r") as f: # r: read
+        with h5py.File(filename, "r") as f: # r: read
             for key in f.keys():
                 history[key] = f[key][:]
     except FileNotFoundError:
@@ -358,6 +360,9 @@ def train(model: nn.Module,
           max_epochs: int=20,
           scheduler: optim.lr_scheduler.LRScheduler=None,
           batch_scheduler: optim.lr_scheduler.LRScheduler=None,
+          save_model_path: str=SAVE_MODEL_PATH,
+          save_best_model_path: str=SAVE_BEST_MODEL_PATH,
+          save_history_path: str=SAVE_HISTORY_PATH,
           device: torch.device=None):
 
     model = model.to(device=device)
@@ -425,7 +430,6 @@ def train(model: nn.Module,
                 hyps = ctc_greedy_decode(outputs.float().cpu(), out_lens.cpu(), tokenizer)
             epoch_refs.extend(refs)
             epoch_hyps.extend(hyps)
-
             if i % 10 == 0:
                 print(f"Epoch {epoch}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
 
@@ -447,8 +451,8 @@ def train(model: nn.Module,
                 print(f"[ LR  ] {scheduler.get_last_lr()[0]:.2e}")
             if v_wer < best_val_wer:
                 best_val_wer = v_wer
-                save_model(model, optimiser, epoch, loss=epoch_loss, filepath=SAVE_BEST_MODEL_PATH)
-                print(f"[ Best] New best val WER {best_val_wer:.4f} — checkpoint saved to {SAVE_BEST_MODEL_PATH}")
+                save_model(model, optimiser, epoch, loss=epoch_loss, filepath=save_best_model_path)
+                print(f"[ Best] New best val WER {best_val_wer:.4f} — checkpoint saved to {save_best_model_path}")
         else:
             v_loss, v_cer, v_wer = [-1,-1,-1] # negative values indicate undefined (for saving history)
 
@@ -457,7 +461,7 @@ def train(model: nn.Module,
             optimizer=optimiser,
             epoch=epoch,
             loss=epoch_loss,
-            filepath=SAVE_MODEL_PATH
+            filepath=save_model_path
         )
 
         save_history(
@@ -468,13 +472,14 @@ def train(model: nn.Module,
              epoch_wer,
              v_wer,
              train_epoch_time,
-             val_epoch_time]
+             val_epoch_time],
+            path=save_history_path,
         )
 
         if epoch_loss <= loss_threshold:  # early termination
             break
 
-    return load_h5_struct(SAVE_HISTORY_PATH)
+    return load_h5_struct(save_history_path)
 
 def test(model: nn.Module,
          test_loader: DataLoader,
