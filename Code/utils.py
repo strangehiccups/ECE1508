@@ -76,13 +76,11 @@ def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RAT
         audio = resampler(audio)
         sample_rate = SAMPLE_RATE
         
-    mel_transform = T.MelSpectrogram(
-        sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels, power=2.0
+    log_mel_spectrogram_pipeline = nn.Sequential(
+        T.MelSpectrogram(sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels, power=2.0),
+        T.AmplitudeToDB(top_db=80.0)
     )
-    amp2db_transform = T.AmplitudeToDB(top_db=80.0)
-    S = mel_transform(audio)
-    S = amp2db_transform(S)
-    return torch.log(S + 1e-9)  # log-mel; BatchNorm in the CNN handles normalisation
+    return log_mel_spectrogram_pipeline(audio)  # log-mel; BatchNorm in the CNN handles normalisation
 
 
 # SpecAugment paper: https://www.isca-archive.org/interspeech_2019/park19e_interspeech.pdf
@@ -170,7 +168,7 @@ def collate_fn_train(batch) -> Optional[dict]:
     if len(batch) == 0:
         return None
 
-    mels = [_pick_mel(s, ('mel_audio_spec_augment', 'raw_mel_audio')) for s in batch]
+    mels = [_pick_mel(s, ('raw_mel_audio',)) for s in batch]
     tokenized_texts = [sample.tokenized_text for sample in batch]
     return _collate_from_mels(mels, tokenized_texts)
 
@@ -283,7 +281,7 @@ def save_history(history_values: list, path: str=SAVE_HISTORY_PATH):
 def load_h5_struct(file_path: str=SAVE_HISTORY_PATH):
     history = {}
     try:
-        with h5py.File(filename, "r") as f: # r: read
+        with h5py.File(file_path, "r") as f: # r: read
             for key in f.keys():
                 history[key] = f[key][:]
     except FileNotFoundError:
