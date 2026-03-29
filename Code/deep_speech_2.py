@@ -32,8 +32,7 @@ class DeepSpeech2(nn.Module):
                  GRU_depth: int=3,
                  GRU_bidirectional: bool=False, # unidirectional as we have look ahead convolution to add future context (cheaper but weaker approach)
                  GRU_dropout: float=0.3,
-                 look_ahead_context: int=40, # DeepSpeech configuration (80) is overkill for LJSpeech
-                 device: torch.device=None):
+                 look_ahead_context: int=40):   # DeepSpeech configuration (80) is overkill for LJSpeech
         super().__init__()
         # 0. tokenizer
         self.tokenizer = tokenizer
@@ -50,8 +49,7 @@ class DeepSpeech2(nn.Module):
                        hidden_size=GRU_hidden_size,
                        num_layers=GRU_depth,
                        bidirectional=GRU_bidirectional,
-                       dropout=GRU_dropout,
-                       device=device)
+                       dropout=GRU_dropout)
         # 3. look ahead convolution block: hidden state sequences -> hidden state sequences with future context
         self.lookAheadConv = LookAheadConv(in_channels=self.gru.output_size,
                                            context=look_ahead_context)

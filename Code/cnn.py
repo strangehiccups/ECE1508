@@ -15,10 +15,8 @@ from torch import nn
 class CNNLayer(nn.Module):
     def __init__(self,
                  in_channels: int, out_channels: int,
-                 kernel_size=(41, 11), stride=(2, 2), padding=(20, 5),
-                 device: torch.device=None):
+                 kernel_size=(41, 11), stride=(2, 2), padding=(20, 5)):
         super().__init__()
-        self.device = device
         self.cnn = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
         self.bn = torch.nn.BatchNorm2d(out_channels)
         self.clipped_relu = lambda x: torch.clamp(x, min=0, max=20)
@@ -49,15 +47,13 @@ class CNNLayer(nn.Module):
 class ConvolutionFeatureExtractor(nn.Module):
     def __init__(self,
                  in_channels: int, out_channels: int,
-                 in_feat_dim=80,
-                 device: torch.device=None):
+                 in_feat_dim=80):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.device = device
 
-        self.conv1 = CNNLayer(in_channels, out_channels, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5), device=device)
-        self.conv2 = CNNLayer(out_channels, out_channels, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5), device=device)
+        self.conv1 = CNNLayer(in_channels, out_channels, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5))
+        self.conv2 = CNNLayer(out_channels, out_channels, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5))
 
         # Compute output_size based on how the frequency dimension changes
         feat_dim = in_feat_dim

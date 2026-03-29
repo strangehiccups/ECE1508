@@ -7,8 +7,7 @@ class GRU(nn.Module):
                  hidden_size: int,
                  num_layers: int,
                  bidirectional: bool,
-                 dropout: float,
-                 device: torch.device=None):
+                 dropout: float):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -26,8 +25,7 @@ class GRU(nn.Module):
                    num_layers=1,  # we stack multiple GRU layers instead of using the built-in multi-layer functionality to allow for layer norm in between
                    bias=True,
                    batch_first=True, # (batch, time, features)
-                   bidirectional=self.bidirectional,
-                   device=device)
+                   bidirectional=self.bidirectional)
             for i in range(self.num_layers)
         ])
         self.lns = nn.ModuleList([
