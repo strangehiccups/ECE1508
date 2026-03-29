@@ -95,6 +95,6 @@ class LJSpeechDataset(Dataset):
             tokenized_text=torch.tensor(tokenized_text, dtype=torch.long),
         )
     
-def load_ljspeech(data_dir: str, augment: bool = True) -> LJSpeechDataset:
+def load_ljspeech(data_dir: str, augment: bool = False) -> LJSpeechDataset:
     """Helper function to load LJSpeech dataset."""
     return LJSpeechDataset(data_dir, augment=augment)
