@@ -5,7 +5,7 @@ import torchaudio
 import torch
 from torch.utils.data import Dataset
 
-from utils import AudioSample, get_audio_mel_spectrogram
+from utils import AudioSample, get_audio_mel_spectrogram, spec_augment
 from config import TOKENIZER
 
 # AI-generated code for logging setup. Not part of the original codebase, but included here for completeness.
@@ -42,7 +42,7 @@ class LibriSpeechDataset(Dataset):
         Dataset split to load, e.g. ``"test-clean"``.
     """
 
-    def __init__(self, data_dir: str, split: str = "test-clean", download: bool = False):
+    def __init__(self, data_dir: str, split: str = "test-clean", download: bool = False, augment: bool = False):
         self.split_dir = Path(data_dir) / "LibriSpeech" / split
 
         if not self.split_dir.exists():
@@ -51,6 +51,7 @@ class LibriSpeechDataset(Dataset):
                 f"Please download and extract the dataset using data_loader.download_librispeech()."
             )
 
+        self.augment = augment
         logger.info(f"Loading LibriSpeech {split} from {self.split_dir}...")
         self.file_paths, self.labels = self._index()
         logger.info(f"Found {len(self.file_paths)} utterances.")
@@ -91,6 +92,7 @@ class LibriSpeechDataset(Dataset):
         # LibriSpeech is recorded at 16 kHz — preserve native sample rate
         audio, sr = torchaudio.load(file_path)
         mel_audio = get_audio_mel_spectrogram(audio, sr)
+        mel_audio_spec_augment = spec_augment(mel_audio) if self.augment else None
 
         raw_text = self.labels.get(file_path.stem, "")
         try:
@@ -103,13 +105,13 @@ class LibriSpeechDataset(Dataset):
         return AudioSample(
             raw_audio=audio,
             raw_mel_audio=mel_audio,
-            mel_audio_spec_augment=None,
+            mel_audio_spec_augment=mel_audio_spec_augment,
             sample_rate=sr,
             file_path=str(file_path),
             raw_text=raw_text,
             tokenized_text=torch.tensor(tokenized_text, dtype=torch.long),
         )
 
-def load_librispeech(data_dir: str, split: str = "test-clean") -> LibriSpeechDataset:
+def load_librispeech(data_dir: str, split: str = "test-clean", augment: bool = True) -> LibriSpeechDataset:
     """Helper function to load LibriSpeech dataset."""
-    return LibriSpeechDataset(data_dir, split=split)
+    return LibriSpeechDataset(data_dir, split=split, augment=augment)
