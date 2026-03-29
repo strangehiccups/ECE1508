@@ -11,7 +11,7 @@ class TemporalNetwork(Enum):
     GRU = 1
     GRU_BIDIRECTIONAL = 2
     LSTM = 3
-    TRANSFORMER = 4
+    CONFORMER = 4
 
 HOP_LENGTH = 256
 N_FFT = 512

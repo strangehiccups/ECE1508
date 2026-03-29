@@ -28,8 +28,14 @@ from config import (
     N_MELS,
     SAVE_MODEL_PATH,
     SAVE_BEST_MODEL_PATH,
-    SAVE_HISTORY_PATH
+    SAVE_HISTORY_PATH,
+    TemporalNetwork
 )
+
+from deep_speech_2 import DeepSpeech2
+from deep_speech_2_bidirectional import DeepSpeech2Bidirectional
+from deep_speech_2_lstm import DeepSpeech2LSTM
+from conformer import Conformer
 
 from torchmetrics.text import CharErrorRate, WordErrorRate
 
@@ -194,6 +200,22 @@ def log_audio_sample(sample: AudioSample, title: str):
     print(f"Audio shape: {sample.raw_audio.shape}, Sample rate: {sample.sample_rate} Hz")
     display(Audio(sample.raw_audio.squeeze().numpy(), rate=sample.sample_rate))
 
+def get_model(temporal_network: TemporalNetwork,
+              in_channels: int):
+    match temporal_network:
+        case TemporalNetwork.GRU:
+            print("Using DeepSpeech2 with GRU layers")
+            model = DeepSpeech2(conv_in_channels=in_channels)
+        case TemporalNetwork.GRU_BIDIRECTIONAL:
+            print("Using DeepSpeech2 with Bidirectional GRU layers")
+            model = DeepSpeech2Bidirectional(conv_in_channels=in_channels)
+        case TemporalNetwork.LSTM:
+            print("Using DeepSpeech2 with LSTM layers")
+            model = DeepSpeech2LSTM(conv_in_channels=in_channels)
+        case TemporalNetwork.CONFORMER:
+            print("Using Conformer (CNN + encoder + CTC)")
+            model = Conformer(conv_in_channels=in_channels)
+    return model
 
 # Save the trained model
 def save_model(model, optimizer, epoch, loss=None, filepath=SAVE_MODEL_PATH):
@@ -255,15 +277,32 @@ def save_history(history_values: list, path: str=SAVE_HISTORY_PATH):
             arr[n] = history_values[i]
 
 
-def load_h5_struct(filename: str):
+def load_h5_struct(file_path: str=SAVE_HISTORY_PATH):
     history = {}
     try:
-        with h5py.File(SAVE_HISTORY_PATH, "r") as f: # r: read
+        with h5py.File(file_path, "r") as f: # r: read
             for key in f.keys():
                 history[key] = f[key][:]
     except FileNotFoundError:
         history = None
     return history
+
+def load_run(temporal_network: TemporalNetwork,
+             in_channels: int,
+             model_path=SAVE_MODEL_PATH,
+             best_model_path=SAVE_BEST_MODEL_PATH,
+             history_path=SAVE_HISTORY_PATH,
+             optimizer=None,
+             device=None):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    best_model = get_model(temporal_network=temporal_network, in_channels=in_channels)
+    load_model(model=best_model, device=device, filepath=best_model_path, optimizer=optimizer)
+    model = get_model(temporal_network=temporal_network, in_channels=in_channels)
+    load_model(model=model, device=device, filepath=model_path, optimizer=optimizer)
+    history = load_h5_struct(file_path=history_path)
+    return best_model, model, history
 
 
 def ctc_greedy_decode(log_probs: torch.Tensor,
