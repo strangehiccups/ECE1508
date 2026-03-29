@@ -196,7 +196,8 @@ def log_audio_sample(sample: AudioSample, title: str):
     # True audio
     plot_audio_mel_spectrogram(sample.raw_mel_audio.float(), sample_rate=sample.sample_rate)
     # Time/Frequency-masked sample
-    plot_audio_mel_spectrogram(sample.mel_audio_spec_augment.float(), sample_rate=sample.sample_rate)
+    if sample.mel_audio_spec_augment is not None:
+        plot_audio_mel_spectrogram(sample.mel_audio_spec_augment.float(), sample_rate=sample.sample_rate)
     print(f"Raw text: {sample.raw_text}")
     print(f"Tokenized text: {sample.tokenized_text}")
     print(f"Audio shape: {sample.raw_audio.shape}, Sample rate: {sample.sample_rate} Hz")

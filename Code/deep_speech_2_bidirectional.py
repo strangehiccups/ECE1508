@@ -39,8 +39,7 @@ class DeepSpeech2Bidirectional(nn.Module):
         # 1. feature extractor: time (x frequency) tensor -> feature maps
         self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels,
                                                              out_channels=conv_out_channels,
-                                                             in_feat_dim=in_feat_dim,
-                                                             device=device)
+                                                             in_feat_dim=in_feat_dim)
         # 2. GRU block: features -> hidden state sequences (time-sequential information)
         self.gru = GRU(input_size=self.feature_extractor.output_size,
                        hidden_size=GRU_hidden_size,

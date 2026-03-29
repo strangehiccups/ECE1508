@@ -41,8 +41,7 @@ class DeepSpeech2LSTM(nn.Module):
         # 1. feature extractor: time (x frequency) tensor -> feature maps
         self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels,
                                                              out_channels=conv_out_channels,
-                                                             in_feat_dim=in_feat_dim,
-                                                             device=device)
+                                                             in_feat_dim=in_feat_dim)
 
         # 2. LSTM block: stacked manually so LayerNorm can be applied between layers,
         #    matching gru.py's design.
