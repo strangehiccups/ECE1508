@@ -7,3 +7,6 @@ scikit-learn
 tqdm
 transformers[torch]
 torchmetrics
+torchcodec
+h5py
+flashlight-text

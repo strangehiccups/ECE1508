@@ -32,7 +32,7 @@ class LJSpeechDataset(Dataset):
             metadata.csv    # pipe-separated: file_id|raw_text|normalised_text
     """
 
-    def __init__(self, data_dir: str, augment: bool = True):
+    def __init__(self, data_dir: str, augment: bool = False):
         self.data_dir = Path(data_dir)
         self.file_dir = self.data_dir / 'wavs'
         self.augment  = augment
@@ -74,6 +74,7 @@ class LJSpeechDataset(Dataset):
                 audio = AF.resample(audio, orig_freq=int(sr * rate), new_freq=sr)
 
         raw_mel_audio = get_audio_mel_spectrogram(audio, sr)
+
         mel_spec_augment_audio = spec_augment(raw_mel_audio) if self.augment else None
 
         raw_text = self.labels.get(file_path.stem)

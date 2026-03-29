@@ -25,6 +25,7 @@ class DeepSpeech2LSTM(nn.Module):
                  tokenizer: transformers.PreTrainedTokenizerBase=None,
                  conv_in_channels: int=1,
                  conv_out_channels: int=32,
+                 in_feat_dim: int=80,
                  LSTM_hidden_size: int=512,
                  LSTM_depth: int=3,
                  LSTM_bidirectional: bool=False,
@@ -41,6 +42,7 @@ class DeepSpeech2LSTM(nn.Module):
         # 1. feature extractor: time (x frequency) tensor -> feature maps
         self.feature_extractor = ConvolutionFeatureExtractor(in_channels=conv_in_channels,
                                                              out_channels=conv_out_channels,
+                                                             in_feat_dim=in_feat_dim,
                                                              device=device)
 
         # 2. LSTM block: stacked manually so LayerNorm can be applied between layers,

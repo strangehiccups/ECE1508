@@ -40,10 +40,7 @@ class CNNLayer(nn.Module):
         return (in_seq_len + 2 * self.cnn.padding[1] - self.cnn.dilation[1] * (self.cnn.kernel_size[1] - 1) - 1) // self.cnn.stride[1] + 1
         
     def mask_invalid(self, x, seq_lens):
-        batch_size, _, _, _ = x.shape
-        mask = torch.zeros(batch_size, seq_lens.max(), device=self.device)
-        for i, length in enumerate(seq_lens):
-            mask[i, :length] = 1
+        mask = (torch.arange(seq_lens.max(), device=x.device)[None, :] < seq_lens.to(x.device)[:, None]).float()
         mask = mask.unsqueeze(1).unsqueeze(1)
         return x * mask
 
@@ -78,7 +75,7 @@ class ConvolutionFeatureExtractor(nn.Module):
         x, seq_lens = self.conv2(x, seq_lens)
 
         # GRU expects: (batch_size, time, feature = out_channels * frequency)
-        batch_size, out_channels, freq, time = x.shape
+        batch_size, out_channels, freq, time = x.shape  # noqa: F841
         # Permute to (batch_size, time, out_channels, frequency) and flatten (channels & frequency) into the feature vector
         x = x.permute(0, 3, 1, 2).flatten(2)
 
