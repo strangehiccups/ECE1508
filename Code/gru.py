@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
 
 class GRU(nn.Module):
     def __init__(self,
@@ -45,21 +46,18 @@ class GRU(nn.Module):
                 x, # [batch, time, features]
                 seq_lens): # expected to be sorted (in decreasing order)
         seq_lens = seq_lens.detach().to(dtype=torch.int64).cpu() # pack_padded_sequence requires lengths to be on CPU
-        batch, seq_len, _ = x.shape
-        out = x
+        _, seq_len, _ = x.shape
+        # Pack once before the layer loop — eliminates redundant pack/unpack overhead on every layer
+        out = pack_padded_sequence(x, seq_lens, batch_first=True, enforce_sorted=True)
         for l in range(self.num_layers):
-            # pack padded sequence to eliminate unnecessary convolution on pad cells
-            out = nn.utils.rnn.pack_padded_sequence(input=out,
-                                                    lengths=seq_lens,
-                                                    batch_first=True,
-                                                    enforce_sorted=True)
-            out, _ = self.grus[l](out)   # [batch, time, hidden_size]
-            # unpack to match expected layer norm input size
-            out, _ = nn.utils.rnn.pad_packed_sequence(sequence=out,
-                                                      total_length=seq_len,
-                                                      batch_first=True)
-            out = self.lns[l](out)
-            # Apply dropout between layers only (not after the final layer) to regularise inter-layer representations
+            out, _ = self.grus[l](out)   # PackedSequence in, PackedSequence out
+            # Apply LayerNorm directly to packed data tensor [total_tokens, hidden_size] —
+            # semantically identical to unpacking first since LayerNorm operates per-token
+            normed = self.lns[l](out.data)
+            # Apply dropout between layers only (not after the final layer)
             if l < self.num_layers - 1:
-                out = self.drop(out)
+                normed = self.drop(normed)
+            out = PackedSequence(normed, out.batch_sizes, out.sorted_indices, out.unsorted_indices)
+        # Unpack once after all layers
+        out, _ = pad_packed_sequence(out, total_length=seq_len, batch_first=True)
         return out # [batch, time, hidden state sequences]

@@ -25,7 +25,6 @@ def _run_experiments(
     val_set,
     test_set,
     model_builder: Callable[[], torch.nn.Module],
-    loss_fn,
     learning_rate: float,
     num_epochs: int,
     batch_size: int,
@@ -46,6 +45,9 @@ def _run_experiments(
 
         # Build a fresh model per seed to avoid weight/state leakage across runs.
         model = model_builder().to(device)
+        # Derive the loss function from the model instance — keeps it in sync with
+        # the model's blank token and avoids re-instantiating nn.CTCLoss each call.
+        loss_fn = model.loss_fn
 
         train_loader = torch.utils.data.DataLoader(
             dataset=train_set,
@@ -176,7 +178,6 @@ def run_multi_seed_experiment(
     train_set,
     val_set,
     test_set,
-    loss_fn: torch.nn.Module,
     learning_rate: float,
     num_epochs: int,
     batch_size: int,
@@ -209,7 +210,6 @@ def run_multi_seed_experiment(
         val_set=val_set,
         test_set=test_set,
         model_builder=model_builder,
-        loss_fn=loss_fn,
         learning_rate=learning_rate,
         num_epochs=num_epochs,
         batch_size=batch_size,
