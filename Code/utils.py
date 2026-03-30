@@ -9,11 +9,11 @@ import torch.optim as optim
 import transformers
 import os
 import time
+from pathlib import Path
 
 from torch.utils.data import DataLoader
 from transformers import Wav2Vec2CTCTokenizer
 from tqdm.auto import tqdm
-from dataclasses import dataclass
 from typing import Optional
 
 import h5py
@@ -38,17 +38,6 @@ from deep_speech_2_lstm import DeepSpeech2LSTM
 from conformer import Conformer
 
 from torchmetrics.text import CharErrorRate, WordErrorRate
-
-
-@dataclass(frozen=True)
-class AudioSample:
-    raw_audio: Optional[torch.Tensor]  # only needed for debug display; None on cache hits
-    raw_mel_audio: torch.Tensor
-    mel_audio_spec_augment: Optional[torch.Tensor]
-    sample_rate: int
-    file_path: str
-    raw_text: str
-    tokenized_text: Optional[torch.Tensor] = None
 
 
 def get_audio_duration(audio, sample_rate):
@@ -82,27 +71,6 @@ def get_audio_mel_spectrogram(audio: torch.Tensor, sample_rate: int = SAMPLE_RAT
     )
     return log_mel_spectrogram_pipeline(audio)  # log-mel; BatchNorm in the CNN handles normalisation
 
-
-# SpecAugment paper: https://www.isca-archive.org/interspeech_2019/park19e_interspeech.pdf
-# time_mask_param: maximum width of the time mask (in frames)
-# freq_mask_param: maximum width of the frequency mask (in mel bins)
-# Check Table 1. in this paper, set the # of params based on Libri Double (which is basically)
-# for multi-speaker (and I've set it to this currently in preparation for libri-small)
-def spec_augment(mel_spectrogram: torch.Tensor, time_mask_param: int = 30, freq_mask_param: int = 13) -> torch.Tensor:
-    # Clone to avoid in-place mutation of the original mel spectrogram.
-    augmented = mel_spectrogram.clone()
-
-    # Guard against short utterances so mask widths do not exceed dimensions.
-    freq_bins = augmented.shape[-2]
-    time_steps = augmented.shape[-1]
-    safe_freq_mask = min(freq_mask_param, max(1, freq_bins - 1))
-    safe_time_mask = min(time_mask_param, max(1, time_steps - 1))
-
-    augmented = T.FrequencyMasking(safe_freq_mask)(augmented)
-    augmented = T.FrequencyMasking(safe_freq_mask)(augmented)
-    augmented = T.TimeMasking(safe_time_mask)(augmented)
-    augmented = T.TimeMasking(safe_time_mask)(augmented)
-    return augmented
 
 
 def plot_waveform(audio: torch.Tensor, sample_rate: int):
@@ -151,55 +119,34 @@ def _collate_from_mels(mels: list[torch.Tensor], tokenized_texts: list[torch.Ten
     }
 
 
-def _pick_mel(sample, attrs):
-    for attr in attrs:
-        val = getattr(sample, attr, None)
-        if val is not None:
-            return val
-    return None
-
-
-# We have different collate functions for train/eval because
-# we cannot run SpecAugment pre-processing on validation sets,
-# and this was easier than figuring out how to parametrize the
-# dataloader
 def collate_fn_train(batch) -> Optional[dict]:
-    batch = [sample for sample in batch if sample is not None]
-    if len(batch) == 0:
+    batch = [s for s in batch if s is not None]
+    if not batch:
         return None
-
-    mels = [_pick_mel(s, ('raw_mel_audio',)) for s in batch]
-    tokenized_texts = [sample.tokenized_text for sample in batch]
-    return _collate_from_mels(mels, tokenized_texts)
+    mels   = [mel for mel, _ in batch]
+    tokens = [tok for _, tok in batch]
+    return _collate_from_mels(mels, tokens)
 
 
 def collate_fn_eval(batch) -> Optional[dict]:
-    batch = [sample for sample in batch if sample is not None]
-    if len(batch) == 0:
+    batch = [s for s in batch if s is not None]
+    if not batch:
         return None
-
-    mels = [_pick_mel(s, ('raw_mel_audio',)) for s in batch]
-    tokenized_texts = [sample.tokenized_text for sample in batch]
-    return _collate_from_mels(mels, tokenized_texts)
-
-
-# Backward-compatible default: training collate (includes SpecAugment when present).
-def collate_fn(batch) -> Optional[dict]:
-    return collate_fn_train(batch)
+    mels   = [mel for mel, _ in batch]
+    tokens = [tok for _, tok in batch]
+    return _collate_from_mels(mels, tokens)
 
 
-def log_audio_sample(sample: AudioSample, title: str):
+def log_audio_sample(raw_audio: torch.Tensor, sample_rate: int, mel: torch.Tensor,
+                     raw_text: str, tokenized_text=None, title: str = ""):
     from IPython.display import display, Audio
     print(f"--- {title} ---")
-    # True audio
-    plot_audio_mel_spectrogram(sample.raw_mel_audio.float(), sample_rate=sample.sample_rate)
-    # Time/Frequency-masked sample
-    if sample.mel_audio_spec_augment is not None:
-        plot_audio_mel_spectrogram(sample.mel_audio_spec_augment.float(), sample_rate=sample.sample_rate)
-    print(f"Raw text: {sample.raw_text}")
-    print(f"Tokenized text: {sample.tokenized_text}")
-    print(f"Audio shape: {sample.raw_audio.shape}, Sample rate: {sample.sample_rate} Hz")
-    display(Audio(sample.raw_audio.squeeze().numpy(), rate=sample.sample_rate))
+    plot_audio_mel_spectrogram(mel.float(), sample_rate=sample_rate)
+    print(f"Raw text: {raw_text}")
+    if tokenized_text is not None:
+        print(f"Tokenized text: {tokenized_text}")
+    print(f"Audio shape: {raw_audio.shape}, Sample rate: {sample_rate} Hz")
+    display(Audio(raw_audio.squeeze().numpy(), rate=sample_rate))
 
 def get_model(temporal_network: TemporalNetwork,
               in_channels: int):
@@ -378,11 +325,13 @@ def train(model: nn.Module,
         # ------------------------------------------------------------------ #
         risk = 0.0
         epoch_refs, epoch_hyps = [], []
+        # Accumulate detached CPU tensors for end-of-epoch CER/WER decode (avoids blocking the GPU per batch)
+        epoch_decode_queue = []
         train_epoch_time = 0.0; val_epoch_time = 0.0; # in seconds
         model.train()
         for i, batch in tqdm(enumerate(train_loader), desc="batch", position=1, leave=False, total=num_train_batches):
             batch_start_time = time.time()
-            
+
             specs      = batch['padded_spectrograms']
             seq_lens   = batch['input_lengths']
             targets    = batch['packed_transcripts']
@@ -391,7 +340,7 @@ def train(model: nn.Module,
             specs = specs.to(device=device, non_blocking=True)
             targets = targets.to(device=device, non_blocking=True)
             # forward pass with mixed precision
-            optimiser.zero_grad()
+            optimiser.zero_grad(set_to_none=True)
             # collect the training loss
             with torch.amp.autocast(device_type=device.type, enabled=use_amp):
                 outputs, out_lens = model.forward(specs, seq_lens)
@@ -422,15 +371,21 @@ def train(model: nn.Module,
                 batch_scheduler.step()
 
             train_epoch_time += time.time() - batch_start_time
-            
-            # Accumulate predictions/references for CER/WER (detach from graph)
-            with torch.no_grad():
-                refs = _decode_targets(targets.cpu(), target_lens.cpu(), tokenizer)
-                hyps = ctc_greedy_decode(outputs.float().cpu(), out_lens.cpu(), tokenizer)
-            epoch_refs.extend(refs)
-            epoch_hyps.extend(hyps)
+
+            # Stash CPU copies for end-of-epoch decode — avoid blocking GPU with per-batch CTC greedy decode
+            epoch_decode_queue.append((
+                outputs.detach().float().cpu(),
+                out_lens.cpu(),
+                targets.detach().cpu(),
+                target_lens.cpu(),
+            ))
             if i % 10 == 0:
                 print(f"Epoch {epoch}/{max_epochs}, Batch {i+1}/{num_train_batches}, Loss: {loss.item():.4f}")
+
+        # Decode all training batches in one pass after the epoch completes
+        for outputs_cpu, out_lens_cpu, targets_cpu, tlens_cpu in epoch_decode_queue:
+            epoch_refs.extend(_decode_targets(targets_cpu, tlens_cpu, tokenizer))
+            epoch_hyps.extend(ctc_greedy_decode(outputs_cpu, out_lens_cpu, tokenizer))
 
         epoch_loss = risk / num_train_batches
         epoch_cer  = CharErrorRate()(epoch_hyps, epoch_refs).item()

@@ -58,7 +58,9 @@ class DeepSpeech2(nn.Module):
         self.logSoftmax = nn.LogSoftmax(dim=2) # head output shape: [batch, time, logits], log softmax on logits
         # 4b. softmax activation (only during inference): character logits -> character probabilities
         self.softmax = nn.Softmax(dim=2)       # head output shape: [batch, time, logits], softmax on logits
-    
+        # 4c. CTC loss — instantiated once and reused to avoid per-call object construction overhead
+        self._ctc_loss = nn.CTCLoss(blank=self.blank_token_id, reduction='mean')
+
     def forward(
         self,
         x, # [batch, channel, frequency, time]
@@ -71,8 +73,8 @@ class DeepSpeech2(nn.Module):
         out = self.logSoftmax(out)
         return out, final_seq_lens
 
-    @staticmethod
     def loss_fn(
+        self,
         blank,
         log_probs,    # [batch, time, log character probability]
         seq_lens,     # [sequence length]
@@ -82,10 +84,7 @@ class DeepSpeech2(nn.Module):
     ): # [target length]
         # nn.CTCLoss expects log_probs of shape [input (time), batch, class]
         log_probs = log_probs.transpose(0,1)
-        loss = nn.CTCLoss(
-            blank=blank, reduction=reduction
-        )
-        return loss(
+        return self._ctc_loss(
             log_probs=log_probs,
             targets=targets,
             input_lengths=seq_lens,
