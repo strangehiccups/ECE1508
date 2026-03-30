@@ -49,14 +49,17 @@ def _run_experiments(
         # the model's blank token and avoids re-instantiating nn.CTCLoss each call.
         loss_fn = model.loss_fn
 
+        _persistent = num_workers > 0
+        _prefetch   = prefetch_factor if num_workers > 0 else None
+
         train_loader = torch.utils.data.DataLoader(
             dataset=train_set,
             batch_size=batch_size,
             collate_fn=utils.collate_fn_train,
             shuffle=True,
-            persistent_workers=True,
-            prefetch_factor=prefetch_factor,
             num_workers=num_workers,
+            persistent_workers=_persistent,
+            prefetch_factor=_prefetch,
             pin_memory=pin_memory,
         )
         val_loader = torch.utils.data.DataLoader(
@@ -64,9 +67,9 @@ def _run_experiments(
             batch_size=batch_size,
             collate_fn=utils.collate_fn_eval,
             shuffle=False,
-            persistent_workers=True,
-            prefetch_factor=prefetch_factor,
             num_workers=num_workers,
+            persistent_workers=_persistent,
+            prefetch_factor=_prefetch,
             pin_memory=pin_memory,
         )
         test_loader = torch.utils.data.DataLoader(
@@ -74,9 +77,9 @@ def _run_experiments(
             batch_size=batch_size,
             collate_fn=utils.collate_fn_eval,
             shuffle=False,
-            persistent_workers=True,
-            prefetch_factor=prefetch_factor,
             num_workers=num_workers,
+            persistent_workers=_persistent,
+            prefetch_factor=_prefetch,
             pin_memory=pin_memory,
         )
 
@@ -186,7 +189,7 @@ def run_multi_seed_experiment(
     model_builder: Callable[[], torch.nn.Module] | None = None,
     seeds: list[int] | None = None,
     results_dir: str = "../models/seed_runs",
-    num_workers: int = 2,
+    num_workers: int = 1,
     prefetch_factor: int = 2,
     pin_memory: bool = True,
 ) -> dict[str, Any]:
