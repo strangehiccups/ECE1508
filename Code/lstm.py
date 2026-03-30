@@ -19,6 +19,7 @@ class LSTM(nn.Module):
         else:
             self.output_size = self.hidden_size
 
+        # Stacked manually so LayerNorm can be applied between layers.
         self.lstms = nn.ModuleList([
             nn.LSTM(input_size=self.input_size if i == 0 else self.output_size,
                     hidden_size=self.hidden_size,
@@ -40,15 +41,18 @@ class LSTM(nn.Module):
         batch, seq_len, _ = x.shape
         out = x
         for l in range(self.num_layers):
+            # Pack the padded sequence for efficient processing
             out = nn.utils.rnn.pack_padded_sequence(input=out,
                                                     lengths=seq_lens,
                                                     batch_first=True,
                                                     enforce_sorted=True)
             out, _ = self.lstms[l](out)
+            # Unpack the output back to padded sequence format
             out, _ = nn.utils.rnn.pad_packed_sequence(sequence=out,
                                                       total_length=seq_len,
                                                       batch_first=True)
             out = self.lns[l](out)
+            # Apply dropout for each stacked layer
             if l < self.num_layers - 1:
                 out = self.drop(out)
         return out  # [batch, time, hidden state sequences]
