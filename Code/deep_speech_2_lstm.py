@@ -18,8 +18,8 @@ from look_ahead_conv import LookAheadConv
 #   - If bidirectional=True, halve LSTM_hidden_size to 256 to keep parameter count
 #     comparable to the unidirectional GRU baseline.
 #
-# LSTM layers are stacked manually (one per ModuleList slot) with a LayerNorm after
-# each layer, mirroring gru.py's design for a fair A/B comparison.
+# LSTM stacking, LayerNorm, and dropout are handled inside lstm.py,
+# mirroring gru.py's design for a fair A/B comparison.
 class DeepSpeech2LSTM(nn.Module):
     def __init__(self,
                  tokenizer: transformers.PreTrainedTokenizerBase=None,
@@ -43,24 +43,15 @@ class DeepSpeech2LSTM(nn.Module):
                                                              out_channels=conv_out_channels,
                                                              in_feat_dim=in_feat_dim)
 
-        # 2. LSTM block: stacked manually so LayerNorm can be applied between layers,
-        #    matching gru.py's design.
-        self.lstm_output_size = 2 * LSTM_hidden_size if LSTM_bidirectional else LSTM_hidden_size
-        self.lstms = nn.ModuleList([
-            LSTM(input_size=self.feature_extractor.output_size if i == 0 else self.lstm_output_size,
-                 hidden_size=LSTM_hidden_size,
-                 num_layers=1,
-                 bidirectional=LSTM_bidirectional,
-                 dropout=LSTM_dropout)
-            for i in range(LSTM_depth)
-        ])
-        self.lns = nn.ModuleList([
-            nn.LayerNorm(self.lstm_output_size)
-            for _ in range(LSTM_depth)
-        ])
+        # 2. LSTM block: features -> hidden state sequences (time-sequential information)
+        self.lstm = LSTM(input_size=self.feature_extractor.output_size,
+                         hidden_size=LSTM_hidden_size,
+                         num_layers=LSTM_depth,
+                         bidirectional=LSTM_bidirectional,
+                         dropout=LSTM_dropout)
 
         # 3. look ahead convolution block: hidden state sequences -> sequences with future context
-        self.lookAheadConv = LookAheadConv(in_channels=self.lstm_output_size,
+        self.lookAheadConv = LookAheadConv(in_channels=self.lstm.output_size,
                                            context=look_ahead_context)
 
         # 4. output layer: hidden state sequences with future context -> character logits
@@ -76,9 +67,7 @@ class DeepSpeech2LSTM(nn.Module):
         seq_lens
     ):
         out, final_seq_lens = self.feature_extractor(x, seq_lens)
-        for lstm, ln in zip(self.lstms, self.lns):
-            out = lstm(out, final_seq_lens)
-            out = ln(out)
+        out = self.lstm(out, final_seq_lens)
         out = self.lookAheadConv(out)
         out = self.head(out)
         out = self.logSoftmax(out)
