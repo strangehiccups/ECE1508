@@ -1,23 +1,3 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import torch
-import torchaudio
-import torchaudio.transforms as T
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import transformers
-import os
-import time
-from pathlib import Path
-
-from torch.utils.data import DataLoader
-from transformers import Wav2Vec2CTCTokenizer
-from tqdm.auto import tqdm
-from typing import Optional
-
-import h5py
-
 from config import (
     TOKENIZER,
     BLANK_TOKEN_ID,
@@ -31,14 +11,41 @@ from config import (
     SAVE_HISTORY_PATH,
     TemporalNetwork
 )
+from dataclasses import dataclass, field
+import h5py
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import pandas as pd
+from pathlib import Path
+import time
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+import torchaudio
+import torchaudio.transforms as T
+from torchmetrics.text import CharErrorRate, WordErrorRate
+from tqdm.auto import tqdm
+import transformers
+from transformers import Wav2Vec2CTCTokenizer
+from typing import Optional
 
 from deep_speech_2 import DeepSpeech2
 from deep_speech_2_bidirectional import DeepSpeech2Bidirectional
 from deep_speech_2_lstm import DeepSpeech2LSTM
 from conformer import Conformer
 
-from torchmetrics.text import CharErrorRate, WordErrorRate
+@dataclass
+class Result:
+    histories: dict
+    test: pd.core.frame.DataFrame
+    stats: dict = field(default_factory=dict)
 
+@dataclass
+class Stats:
+    mean: float
+    std: float
 
 def get_audio_duration(audio, sample_rate):
     return audio.shape[-1] / sample_rate
@@ -252,6 +259,58 @@ def load_run(temporal_network: TemporalNetwork,
     history = load_h5_struct(file_path=history_path)
     return best_model, model, history
 
+def load_results(results_path: str):
+    results = {}
+    for model_dir in Path(results_path).iterdir():
+        if model_dir.is_dir():
+            histories = {}
+            for run_dir in Path(model_dir).iterdir():
+                if run_dir.is_dir() and run_dir.name.startswith('seed_'):
+                    histories[run_dir.name] = load_h5_struct(run_dir / 'history.h5')
+            test_results = pd.read_csv(model_dir / 'seed_results.csv')
+            results[model_dir.name] = Result(histories=histories, test=test_results)
+    return results
+
+def compute_stats(results: dict):
+    for model, result in results.items():
+        history_metrics = {}
+        for run, history in result.histories.items():
+            for metric, values in history.items():
+                if metric in history_metrics:
+                    history_metrics[metric] = np.vstack((history_metrics[metric], values))
+                else:
+                    history_metrics[metric] = values
+        stats = {}
+        for metric, values in history_metrics.items():
+            stats[metric] = Stats(mean=values.mean(axis=0),
+                                  std=values.std(axis=0))
+        stats['test_loss'] = Stats(mean=result.test.test_loss.mean(axis=0),
+                                   std=result.test.test_loss.std(axis=0))
+        stats['test_cer'] = Stats(mean=result.test.test_cer.mean(axis=0),
+                                  std=result.test.test_cer.std(axis=0))
+        stats['test_wer'] = Stats(mean=result.test.test_wer.mean(axis=0),
+                                  std=result.test.test_wer.std(axis=0))
+        results[model].stats = stats
+    return results
+
+def visualise_stats(results: dict):
+    axes = {}
+    for model, result in results.items(): 
+        for stat, values in result.stats.items():
+            if stat.startswith('test_'):
+                print(model + ' ' + stat + ' mean: ' + str(values.mean))
+                print(model + ' ' + stat + ' std: ' + str(values.std))
+            else:
+                epochs = np.arange(1,len(values.mean) + 1)
+                if stat in axes:
+                    ax = axes[stat]
+                else:
+                    _, ax = plt.subplots(); ax.set_title(stat); ax.set_xlabel('epoch')
+                    if stat.endswith('_time'): ax.set_ylabel('time (s)')
+                    axes[stat] = ax
+                ax.plot(epochs, values.mean, label=model+' mean')
+                ax.fill_between(epochs, values.mean - values.std, values.mean + values.std, alpha=0.3, label=model+' ±1 std')
+                ax.legend()
 
 def ctc_greedy_decode(log_probs: torch.Tensor,
                       output_lengths: torch.Tensor,
