@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from cnn import ConvolutionFeatureExtractor
 from positional_encoding import PositionalEncoding
+from conformer_encoder import ConformerEncoder
 
 # based on "Attention Is All You Need" (no need for decoder as CTC already aligns & decodes)
 class Conformer(nn.Module):
@@ -12,10 +13,11 @@ class Conformer(nn.Module):
                  conv_in_channels: int=1,
                  conv_out_channels: int=32,
                  enc_latent_dim: int=256,       # number of expected features in the input
-                 enc_nhead: int=4,              # number of heads in the multiheadattention models
-                 enc_feedforward_dim: int=1024, # dimension of the feedforward network model
+                 enc_feedforward_dim: int=1024, # dimension of the feedforward network
+                 enc_nhead: int=4,              # number of heads in the multiheadattention layers
+                 enc_kernel_size: int=15,       # encoder convolution kernel size
                  enc_dropout: float=0.1,
-                 enc_layers: int=6,
+                 enc_layers: int=12,
                  tokenizer: transformers.PreTrainedTokenizerBase=None):
         super().__init__()
         # 0. tokenizer
@@ -33,18 +35,17 @@ class Conformer(nn.Module):
           d_model=enc_latent_dim,
           max_len=max_seq_len
         )
-        # 4. encoder layers
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=enc_latent_dim,
-            nhead=enc_nhead,
-            dim_feedforward=enc_feedforward_dim,
-            dropout=enc_dropout,
-            batch_first=True
-        )
-        self.transformer = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=enc_layers
-        )
+        # 4. encoder
+        self.encoder = nn.ModuleList([
+            ConformerEncoder(
+                latent_dim=enc_latent_dim,
+                ff_dim=enc_feedforward_dim,
+                heads=enc_nhead,
+                kernel_size=enc_kernel_size,
+                dropout=enc_dropout
+            )
+            for _ in range(enc_layers)
+        ])
         # 5. output layer: features -> character logits
         self.output_layer = nn.Linear(enc_latent_dim, self.tokenizer.vocab_size)
         # 6. log softmax activation for CTC loss: character logits -> log character probabilities
@@ -63,7 +64,8 @@ class Conformer(nn.Module):
         mask = torch.arange(max_len, device=x.device).expand(len(final_seq_lens), max_len)
         src_key_padding_mask = mask >= final_seq_lens.to(x.device).unsqueeze(1)
         # 4. encode
-        x = self.transformer(x, src_key_padding_mask=src_key_padding_mask)
+        for layer in self.encoder:
+            x = layer(x, key_padding_mask=src_key_padding_mask)
         # 5. map to logits
         x = self.output_layer(x)
         # 6. compute log probabilities
