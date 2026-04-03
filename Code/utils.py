@@ -38,6 +38,7 @@ from conformer import Conformer
 
 @dataclass
 class Result:
+    num_params: int
     histories: dict
     test: pd.core.frame.DataFrame
     stats: dict = field(default_factory=dict)
@@ -260,15 +261,20 @@ def load_run(temporal_network: TemporalNetwork,
     return best_model, model, history
 
 def load_results(results_path: str):
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     results = {}
     for model_dir in Path(results_path).iterdir():
+        num_params = None
         if model_dir.is_dir():
             histories = {}
             for run_dir in Path(model_dir).iterdir():
                 if run_dir.is_dir() and run_dir.name.startswith('seed_'):
                     histories[run_dir.name] = load_h5_struct(run_dir / 'history.h5')
+                    if num_params is None:
+                        state_dict  = torch.load(run_dir / 'model_best.pth', weights_only=True, map_location=device)['model_state_dict']
+                        num_params = sum(v.numel() for v in state_dict.values())
             test_results = pd.read_csv(model_dir / 'seed_results.csv')
-            results[model_dir.name] = Result(histories=histories, test=test_results)
+            results[model_dir.name] = Result(num_params=num_params, histories=histories, test=test_results)
     return results
 
 def compute_stats(results: dict):
@@ -295,7 +301,8 @@ def compute_stats(results: dict):
 
 def visualise_stats(results: dict):
     axes = {}
-    for model, result in results.items(): 
+    for model, result in results.items():
+        print(model + ' params: ' + str(result.num_params))
         for stat, values in result.stats.items():
             if stat.startswith('test_'):
                 print(model + ' ' + stat + ' mean: ' + str(values.mean))
@@ -308,8 +315,8 @@ def visualise_stats(results: dict):
                     _, ax = plt.subplots(); ax.set_title(stat); ax.set_xlabel('epoch')
                     if stat.endswith('_time'): ax.set_ylabel('time (s)')
                     axes[stat] = ax
-                ax.plot(epochs, values.mean, label=model+' mean')
-                ax.fill_between(epochs, values.mean - values.std, values.mean + values.std, alpha=0.3, label=model+' ±1 std')
+                ax.plot(epochs, values.mean, label=model)
+                ax.fill_between(epochs, values.mean - values.std, values.mean + values.std, alpha=0.3, label=None)
                 ax.legend()
 
 def ctc_greedy_decode(log_probs: torch.Tensor,
