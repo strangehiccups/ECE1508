@@ -273,7 +273,10 @@ def load_results(results_path: str):
                     if num_params is None:
                         state_dict  = torch.load(run_dir / 'model_best.pth', weights_only=True, map_location=device)['model_state_dict']
                         num_params = sum(v.numel() for v in state_dict.values())
-            test_results = pd.read_csv(model_dir / 'seed_results.csv')
+            try:
+                test_results = pd.read_csv(model_dir / 'seed_results.csv')
+            except:
+                test_results = None
             results[model_dir.name] = Result(num_params=num_params, histories=histories, test=test_results)
     return results
 
@@ -290,12 +293,13 @@ def compute_stats(results: dict):
         for metric, values in history_metrics.items():
             stats[metric] = Stats(mean=values.mean(axis=0),
                                   std=values.std(axis=0))
-        stats['test_loss'] = Stats(mean=result.test.test_loss.mean(axis=0),
-                                   std=result.test.test_loss.std(axis=0))
-        stats['test_cer'] = Stats(mean=result.test.test_cer.mean(axis=0),
-                                  std=result.test.test_cer.std(axis=0))
-        stats['test_wer'] = Stats(mean=result.test.test_wer.mean(axis=0),
-                                  std=result.test.test_wer.std(axis=0))
+        if result.test is not None:
+            stats['test_loss'] = Stats(mean=result.test.test_loss.mean(axis=0),
+                                    std=result.test.test_loss.std(axis=0))
+            stats['test_cer'] = Stats(mean=result.test.test_cer.mean(axis=0),
+                                    std=result.test.test_cer.std(axis=0))
+            stats['test_wer'] = Stats(mean=result.test.test_wer.mean(axis=0),
+                                    std=result.test.test_wer.std(axis=0))
         results[model].stats = stats
     return results
 
