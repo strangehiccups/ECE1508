@@ -135,9 +135,15 @@ Cells call `utils.load_results()`, `utils.compute_stats()`, and `utils.visualise
 
 ## Using Pre-trained Checkpoints
 
-Pre-trained checkpoints for completed architecture runs are stored in `models/seed_runs/` and committed to the repo. To use them without retraining:
+Model checkpoints (`.pth`) and training histories (`.h5`) are hosted on Google Drive due to file size.
 
-- **To analyse**: run `analyse.ipynb` directly (step 1 copies the existing checkpoints).
+**Download:** [seed_runs (Google Drive)](https://drive.google.com/drive/folders/1KciiQP08Ey-ButBeK5gTS0JWc8QMHvVF?usp=sharing)
+
+After downloading, place the `seed_runs/` folder at `models/seed_runs/` so the directory structure matches the layout in the Repository Structure section above.
+
+To use the checkpoints without retraining:
+
+- **To analyse**: place `seed_runs/` as above, then run `analyse.ipynb` directly (step 1 copies the checkpoints into the notebook's working directory).
 - **To evaluate a specific seed**: skip all training cells in `main.ipynb`, load the checkpoint manually (example using `gru_bidirectional_3`):
   ```python
   model = build_gru_bidirectional_model()
