@@ -1,0 +1,78 @@
+\section{Methodology}
+
+%------------------------------------------------------------------
+\subsection{Implementation Stack}
+%------------------------------------------------------------------
+
+Models are implemented in PyTorch~\cite{paszke2019pytorch}, with \texttt{torchaudio}~\cite{hwang2023torchaudio}
+for audio processing and CTC beam-search decoding. The character vocabulary is provided by the
+\texttt{facebook/wav2vec2-base} tokenizer via Hugging Face \texttt{transformers}~\cite{wolf-etal-2020-transformers}.
+CER and WER are computed using \texttt{torchmetrics}~\cite{Detlefsen2022}.
+
+%------------------------------------------------------------------
+\subsection{Shared CNN Feature Extractor}
+\label{sec:cnn}
+%------------------------------------------------------------------
+
+All model variants share a two-layer 2-D convolutional front-end
+(\(\text{Conv2D} \to \text{BatchNorm2D} \to \text{Clipped ReLU}\), where
+\(\sigma(x) = \min(\max(x,0),20)\)), clipping activations at 20 to prevent exploding
+values that can destabilise CTC training.
+The first layer uses a \(41\times11\) kernel with stride \(2\times2\) and padding \(20\times5\);
+the second uses a \(21\times11\) kernel with stride \(2\times1\) and padding \(10\times5\)
+(frequency\(\times\)time).
+
+%------------------------------------------------------------------
+\subsection{Temporal Encoder Variants}
+%------------------------------------------------------------------
+
+\subsubsection{GRU / LSTM}
+
+Both the GRU and LSTM use gated recurrent units to mitigate vanishing gradients; the LSTM additionally maintains an explicit cell state for stronger long-range memory.
+Both variants use \(L=3\) stacked layers with hidden size 512, LayerNorm between layers, and dropout \(p=0.3\).
+We evaluate unidirectional and bidirectional GRU; the unidirectional variant is followed by an additional \emph{look-ahead convolution} (kernel size 41, right-padded) for bounded future context.
+
+\subsubsection{Conformer}
+
+The Conformer~\cite{gulati2020conformer} augments a multi-head self-attention (MHSA) transformer
+with a depthwise convolutional module interleaved between each attention layer.
+Self-attention captures global dependencies across the full sequence in parallel,
+while the convolution module provides a local-pattern inductive bias that pure transformers lack.
+The \(\mathcal{O}(n^2)\) memory cost of self-attention is acceptable for the utterance lengths
+in LJ Speech.
+We substitute relative positional encoding with absolute sinusoidal encoding, which suffices for this single-speaker corpus and reduces compute.
+The shared CNN front-end serves as the convolutional subsampling stage.
+We explored 2 Conformer configurations:
+
+\begin{table}[h]
+\label{tab:conformers}
+  \centering
+  \begin{tabular}{lll}
+    \toprule
+    Latent Dimension & \#Conformer Blocks & \#Parameters (M) \\
+    \midrule
+    256 & 12 & 18 \\
+    144 & 10 & 5 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+and both with 4 self-attention heads, dropout $=0.1$, and depthwise convolution kernel size $=15$.
+
+%------------------------------------------------------------------
+\subsection{Training}
+%------------------------------------------------------------------
+
+All models are trained end-to-end with Adam + OneCycleLR, mixed-precision (using \texttt{torch.amp}),
+and gradient clipping. The best checkpoint is selected by validation WER.
+
+\subsubsection{Replication}
+
+To obtain statistically reliable estimates of model performance and to avoid reporting results that
+are artefacts of a particular random initialisation, each model configuration is trained under
+three seeds (1508, 2603, and 9102). Before each run, \texttt{torch.manual\_seed}, \texttt{numpy.random.seed},
+and Python's built-in \texttt{random.seed} are all set to the chosen seed, allowing our results to be reproducible.
+Performance metrics (CER and WER) are reported as the mean \(\pm\) 1 standard deviation across the
+three seeds.
+This guards against over-stating the benefit of any single architecture choice and enables
+fair pairwise comparison between model variants.
