@@ -25,44 +25,6 @@ def download_ljspeech(url: str, path: str = "../data/LJSpeech-1.1"):
         print("LJSpeech already present, skipping download.")
 
 
-def download_librispeech(url: str, path: str = "../data/LibriSpeech", split: str = "test-clean"):
-    if not os.path.exists(f"{path}/{split}"):
-        print(f"Downloading LibriSpeech {split}...")
-        ls_archive = f"{path}/LibriSpeech-{split}.tar.gz"
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(ls_archive, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        print("Download complete. Extracting...")
-        with tarfile.open(ls_archive, "r:gz") as tar:
-            tar.extractall(path=path)
-        os.remove(ls_archive)
-        print(f"LibriSpeech {split} ready.")
-    else:
-        print(f"LibriSpeech {split} already present, skipping download.")
-
-
-def download_librispeech_finetuning(url: str, path: str = "../data/librispeech_finetuning"):
-    sentinel = os.path.join(path, "librispeech_finetuning/1h")
-    if not os.path.exists(sentinel):
-        print("Downloading LibriSpeech finetuning dataset...")
-        os.makedirs(path, exist_ok=True)
-        archive = os.path.join(path, "librispeech_finetuning.tgz")
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(archive, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        print("Download complete. Extracting...")
-        with tarfile.open(archive, "r:gz") as tar:
-            tar.extractall(path=path)
-        os.remove(archive)
-        print("LibriSpeech finetuning ready.")
-    else:
-        print("LibriSpeech finetuning already present, skipping download.")
-
-
 def download_lm(url: str, path: str = "../data/lm", filename: str = "kenlm_3gram.arpa"):
     arpa_path = os.path.join(path, filename)
     lm_gz_path = os.path.join(path, f"{filename}.gz")

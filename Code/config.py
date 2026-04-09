@@ -1,17 +1,29 @@
 from enum import Enum
 from transformers import Wav2Vec2CTCTokenizer
 
-class Dataset(Enum):
-    LJSPEECH = 1
-    LIBRISPEECH = 2
-    MIXED = 3
-    LIBRISPEECH_FINETUNING = 4
 
 class TemporalNetwork(Enum):
     GRU = 1
     GRU_BIDIRECTIONAL = 2
     LSTM = 3
     CONFORMER = 4
+
+
+LJSPEECH_URL = "https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2"
+
+# Language model URLs
+ARPA_GZ_URL = "https://www.openslr.org/resources/11/3-gram.pruned.1e-7.arpa.gz"
+PHONEME_LEXICON_URL = "https://www.openslr.org/resources/11/librispeech-lexicon.txt"
+
+# TRAINING CONFIG
+# TEMPORAL_NETWORK = TemporalNetwork.CONFORMER
+BATCH_SIZE  = 32
+LEARNING_RATE = 3e-4
+NUM_EPOCHS = 20
+
+NUM_WORKERS = 0
+PREFETCH_FACTOR = 2
+PIN_MEMORY = True
 
 HOP_LENGTH = 256
 N_FFT = 512
