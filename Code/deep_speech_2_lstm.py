@@ -1,3 +1,5 @@
+from typing import Optional
+
 import transformers
 from transformers import Wav2Vec2CTCTokenizer
 import torch
@@ -30,7 +32,7 @@ class DeepSpeech2LSTM(nn.Module):
                  LSTM_depth: int=3,
                  LSTM_bidirectional: bool=False,
                  LSTM_dropout: float=0.3,
-                 look_ahead_context: int=40):
+                 look_ahead_context: Optional[int]=None):
         super().__init__()
         # 0. tokenizer
         self.tokenizer = tokenizer
@@ -51,11 +53,16 @@ class DeepSpeech2LSTM(nn.Module):
                          dropout=LSTM_dropout)
 
         # 3. look ahead convolution block: hidden state sequences -> sequences with future context
-        self.lookAheadConv = LookAheadConv(in_channels=self.lstm.output_size,
-                                           context=look_ahead_context)
+        if look_ahead_context is not None:
+            self.lookAheadConv = LookAheadConv(in_channels=self.lstm.output_size,
+                                               context=look_ahead_context)
+            head_input_size = self.lookAheadConv.output_size
+        else:
+            self.lookAheadConv = None
+            head_input_size = self.lstm.output_size
 
         # 4. output layer: hidden state sequences with future context -> character logits
-        self.head = nn.Linear(self.lookAheadConv.output_size, self.tokenizer.vocab_size)
+        self.head = nn.Linear(head_input_size, self.tokenizer.vocab_size)
         # 4a. log softmax for CTC loss during training
         self.logSoftmax = nn.LogSoftmax(dim=2)
         # 4b. softmax for inference
@@ -68,7 +75,8 @@ class DeepSpeech2LSTM(nn.Module):
     ):
         out, final_seq_lens = self.feature_extractor(x, seq_lens)
         out = self.lstm(out, final_seq_lens)
-        out = self.lookAheadConv(out)
+        if self.lookAheadConv is not None:
+            out = self.lookAheadConv(out)
         out = self.head(out)
         out = self.logSoftmax(out)
         return out, final_seq_lens

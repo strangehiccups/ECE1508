@@ -32,6 +32,7 @@ class Decoder(nn.Module):
         nbest: int=1,
         beam_size: int=50
     ):
+        super().__init__()
         self.tokenizer = tokenizer
         self.tokens = list(self.tokenizer.get_vocab().keys())
         self.blank_token = blank_token
