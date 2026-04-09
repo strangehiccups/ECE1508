@@ -1,6 +1,6 @@
+import copy
 import json
 import random
-import copy
 from pathlib import Path
 from typing import Any, Callable
 
@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 
 import utils
+from config import BATCH_SIZE, NUM_WORKERS, PIN_MEMORY, PREFETCH_FACTOR
 
 
 def _set_all_seeds(seed: int) -> None:
@@ -27,63 +28,55 @@ def _run_experiments(
     model_builder: Callable[[], torch.nn.Module],
     learning_rate: float,
     num_epochs: int,
-    batch_size: int,
     device: torch.device,
     seeds: list[int],
     out_dir: Path,
-    num_workers: int,
-    prefetch_factor: int,
-    pin_memory: bool,
 ) -> dict[str, Any]:
     seed_results: list[dict[str, Any]] = []
     seed_histories: dict[int, dict[str, np.ndarray] | None] = {}
     seed_models: dict[int, torch.nn.Module] = {}
 
+    _persistent = NUM_WORKERS > 0
+    _prefetch = PREFETCH_FACTOR if NUM_WORKERS > 0 else None
+
     for run_idx, seed in enumerate(seeds, start=1):
-        print(f"\\n================ Run {run_idx}/{len(seeds)} | seed={seed} ================")
+        print(f"\n================ Run {run_idx}/{len(seeds)} | seed={seed} ================")
         _set_all_seeds(seed)
 
-        # Build a fresh model per seed to avoid weight/state leakage across runs.
         model = model_builder().to(device)
-        # Derive the loss function from the model instance — keeps it in sync with
-        # the model's blank token and avoids re-instantiating nn.CTCLoss each call.
         loss_fn = model.loss_fn
-
-        _persistent = num_workers > 0
-        _prefetch   = prefetch_factor if num_workers > 0 else None
 
         train_loader = torch.utils.data.DataLoader(
             dataset=train_set,
-            batch_size=batch_size,
+            batch_size=BATCH_SIZE,
             collate_fn=utils.collate_fn_train,
             shuffle=True,
-            num_workers=num_workers,
+            num_workers=NUM_WORKERS,
             persistent_workers=_persistent,
             prefetch_factor=_prefetch,
-            pin_memory=pin_memory,
+            pin_memory=PIN_MEMORY,
         )
         val_loader = torch.utils.data.DataLoader(
             dataset=val_set,
-            batch_size=batch_size,
+            batch_size=BATCH_SIZE,
             collate_fn=utils.collate_fn_eval,
             shuffle=False,
-            num_workers=num_workers,
+            num_workers=NUM_WORKERS,
             persistent_workers=_persistent,
             prefetch_factor=_prefetch,
-            pin_memory=pin_memory,
+            pin_memory=PIN_MEMORY,
         )
         test_loader = torch.utils.data.DataLoader(
             dataset=test_set,
-            batch_size=batch_size,
+            batch_size=BATCH_SIZE,
             collate_fn=utils.collate_fn_eval,
             shuffle=False,
-            num_workers=num_workers,
+            num_workers=NUM_WORKERS,
             persistent_workers=_persistent,
             prefetch_factor=_prefetch,
-            pin_memory=pin_memory,
+            pin_memory=PIN_MEMORY,
         )
 
-        # Model parameterization is fully delegated to user-provided builder.
         optimiser = torch.optim.AdamW(params=model.parameters(), lr=learning_rate)
         batch_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimiser,
@@ -183,15 +176,11 @@ def run_multi_seed_experiment(
     test_set,
     learning_rate: float,
     num_epochs: int,
-    batch_size: int,
     device: torch.device,
     model: torch.nn.Module | None = None,
     model_builder: Callable[[], torch.nn.Module] | None = None,
     seeds: list[int] | None = None,
     results_dir: str = "../models/seed_runs",
-    num_workers: int = 1,
-    prefetch_factor: int = 2,
-    pin_memory: bool = True,
 ) -> dict[str, Any]:
     if seeds is None:
         seeds = [1508, 2603, 9102]
@@ -202,7 +191,6 @@ def run_multi_seed_experiment(
     if model_builder is None:
         if model is None:
             raise ValueError("Either `model_builder` or `model` must be provided.")
-
         model_template = copy.deepcopy(model).cpu()
 
         def model_builder() -> torch.nn.Module:
@@ -215,11 +203,7 @@ def run_multi_seed_experiment(
         model_builder=model_builder,
         learning_rate=learning_rate,
         num_epochs=num_epochs,
-        batch_size=batch_size,
         device=device,
         seeds=seeds,
         out_dir=out_dir,
-        num_workers=num_workers,
-        prefetch_factor=prefetch_factor,
-        pin_memory=pin_memory,
     )
