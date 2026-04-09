@@ -16,16 +16,23 @@ ECE1508/
 ├── Code/
 │   ├── main.ipynb                  # Training pipeline (run this first)
 │   ├── analyse.ipynb               # Cross-architecture analysis & plots
-│   ├── multi_seed_runner.py        # Multi-seed training loop
-│   ├── utils.py                    # Train/test loop, checkpointing, history, metrics
+│   ├── builders.py                 # Model factory functions (one per architecture)
 │   ├── config.py                   # Global constants (audio params, paths, tokenizer)
-│   ├── deep_speech_2.py            # GRU (unidirectional) model
-│   ├── deep_speech_2_bidirectional.py  # GRU (bidirectional) model
+│   ├── deep_speech_2.py            # GRU model (uni- and bidirectional via flag)
 │   ├── deep_speech_2_lstm.py       # LSTM model
 │   ├── conformer.py                # Conformer (CNN + encoder) model
 │   ├── decoder.py                  # Greedy & beam CTC decoders (+ KenLM)
 │   ├── data_loader.py              # Dataset download helpers
-│   ├── ljspeech.py / librispeech.py  # Dataset classes
+│   ├── ljspeech.py                 # LJSpeech dataset class
+│   ├── utils/                      # Utility package
+│   │   ├── __init__.py             # Re-exports all public symbols
+│   │   ├── analysis.py             # Result/Stats dataclasses, load_results, compute_stats, visualise_stats
+│   │   ├── checkpointing.py        # save_model, load_model, save_history, load_h5_struct
+│   │   ├── data.py                 # build_dataloaders, collate functions
+│   │   ├── lm.py                   # KenLM decoder helpers
+│   │   ├── multi_seed.py           # run_multi_seed_experiment
+│   │   ├── training.py             # train, test, ctc_greedy_decode
+│   │   └── visualization.py        # Plotting helpers (loss, CER, WER curves)
 │   └── requirements.txt
 ├── models/
 │   └── seed_runs/                  # Per-architecture, per-seed checkpoints
@@ -84,7 +91,7 @@ RUN_LSTM              = True   # Unidirectional LSTM, depth 3, hidden 512
 RUN_TRANSFORMER       = True   # Conformer (CNN + encoder, depth 12)
 ```
 
-Each enabled architecture runs `run_multi_seed_experiment()` across seeds `[1508, 2603, 9102]` and saves results to `../models/seed_runs/<arch_name>/`.
+Each enabled architecture runs `run_multi_seed_experiment()` across seeds `[1508, 2603, 9102]` and saves results to `../models/seed_runs/<arch_name>/`. Models are constructed via the factory functions in `builders.py` (e.g. `build_gru_bidirectional_model()`, `build_lstm_model()`, `build_transformer_model()`).
 
 #### 5. Architecture section cells
 Run the **Section 1: GRU**, **Section 2: LSTM**, and **Section 3: Transformer** cells. Each respects its `RUN_*` flag and is safe to skip.
@@ -146,7 +153,10 @@ To use the checkpoints without retraining:
 - **To analyse**: place `seed_runs/` as above, then run `analyse.ipynb` directly (step 1 copies the checkpoints into the notebook's working directory).
 - **To evaluate a specific seed**: skip all training cells in `main.ipynb`, load the checkpoint manually (example using `gru_bidirectional_3`):
   ```python
-  model = build_gru_bidirectional_model()
+  from builders import build_gru_bidirectional_model
+  import utils
+
+  model = build_gru_bidirectional_model(in_channels, in_feat_dim)
   optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
   utils.load_model(model, device, "../models/seed_runs/<arch_name>/seed_1508/model_best.pth", optimizer)
   history = utils.load_h5_struct("../models/seed_runs/<arch_name>/seed_1508/history.h5")
